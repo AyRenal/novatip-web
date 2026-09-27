@@ -91,6 +91,7 @@ export default function SplitsPage() {
           <SplitsManager
             initial={(creator?.splits as SplitRow[]) ?? []}
             onSave={handleSave}
+            connectedAddress={publicKey ?? undefined}
           />
         )}
       </Card>

@@ -12,7 +12,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
-import { validateSplitsBps } from "@novatip/sdk";
+import { shortenAddress, validateSplitsBps } from "@novatip/sdk";
 import { StrKey } from "@stellar/stellar-sdk";
 import { cn } from "@/lib/utils";
 
@@ -65,15 +65,30 @@ interface SplitsManagerProps {
   initial:    SplitRow[];
   onSave:     (splits: SplitRow[]) => Promise<void>;
   disabled?:  boolean;
+  /**
+   * The creator's own connected wallet, if known. Used only to warn when it
+   * is missing from the splits being saved — every tip would then go
+   * entirely to the listed collaborators, which is sometimes intentional
+   * (a charity jar) but far more often a mistake.
+   */
+  connectedAddress?: string;
 }
 
-export function SplitsManager({ initial, onSave, disabled = false }: SplitsManagerProps) {
+export function SplitsManager({
+  initial,
+  onSave,
+  disabled = false,
+  connectedAddress,
+}: SplitsManagerProps) {
   const [rows,    setRows]    = useState<SplitRowState[]>(
     (initial.length > 0 ? initial : [{ to: "", bps: 10000 }]).map(withId),
   );
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // True while the "your wallet isn't in this list" warning is up, waiting
+  // for the creator to either back out or confirm it is intentional.
+  const [confirmingMissingWallet, setConfirmingMissingWallet] = useState(false);
 
   const parsedBps   = rows.map((r) => parseBpsInput(r.bps));
   const totalBps    = parsedBps.reduce<number>((s, v) => s + (v ?? 0), 0);
@@ -90,24 +105,46 @@ export function SplitsManager({ initial, onSave, disabled = false }: SplitsManag
   const hasDuplicates = isDuplicate.some(Boolean);
   const canSave       = bpsValid && addressesOk && !hasDuplicates && !saving && !disabled;
 
+  // Only ever warns when the connected wallet is known — an anonymous/absent
+  // wallet is not itself suspicious, so there is nothing to compare against.
+  const walletMissing =
+    !!connectedAddress &&
+    !rows.some((r) => normalizeAddress(r.to) === normalizeAddress(connectedAddress));
+
   function updateRow(index: number, field: keyof SplitRow, value: string) {
     setSuccess(false);
+    setConfirmingMissingWallet(false);
     setRows((prev) =>
       prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
     );
   }
 
   function addRow() {
+    setConfirmingMissingWallet(false);
     setRows((prev) => [...prev, { id: crypto.randomUUID(), to: "", bps: "" }]);
   }
 
   function removeRow(index: number) {
     if (rows.length === 1) return;
+    setConfirmingMissingWallet(false);
     setRows((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // Gates the actual save behind the missing-wallet warning, once, rather
+  // than requiring a second click every time — see handleSave for the
+  // outcome once the creator has confirmed (or the warning didn't apply).
+  function requestSave() {
+    if (!canSave) return;
+    if (walletMissing && !confirmingMissingWallet) {
+      setConfirmingMissingWallet(true);
+      return;
+    }
+    void handleSave();
   }
 
   async function handleSave() {
     if (!canSave) return;
+    setConfirmingMissingWallet(false);
     setSaving(true);
     setError(null);
     setSuccess(false);
@@ -259,17 +296,51 @@ export function SplitsManager({ initial, onSave, disabled = false }: SplitsManag
         <p className="text-sm text-success">Splits saved successfully!</p>
       )}
 
-      {/* Save */}
-      <Button
-        size="lg"
-        className="w-full"
-        disabled={!canSave}
-        loading={saving}
-        onClick={handleSave}
-        aria-label="Save collaborator splits"
-      >
-        {saving ? "Saving…" : "Save splits"}
-      </Button>
+      {/* Missing-wallet warning — gates the save once rather than blocking it */}
+      {confirmingMissingWallet ? (
+        <div className="rounded-xl bg-warning/10 border border-warning/20 px-4 py-3 flex flex-col gap-3">
+          <p className="text-sm text-fg">
+            Your connected wallet
+            {connectedAddress && (
+              <> (<span className="font-mono">{shortenAddress(connectedAddress)}</span>)</>
+            )}{" "}
+            isn&rsquo;t one of these recipients. Every tip will go entirely to the
+            addresses listed above and you won&rsquo;t receive anything — that&rsquo;s
+            expected for a charity jar, but worth double-checking otherwise.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              className="flex-1"
+              onClick={() => setConfirmingMissingWallet(false)}
+            >
+              Go back
+            </Button>
+            <Button
+              type="button"
+              size="md"
+              className="flex-1"
+              onClick={() => void handleSave()}
+              aria-label="Save splits without my wallet as a recipient"
+            >
+              Save anyway
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          size="lg"
+          className="w-full"
+          disabled={!canSave}
+          loading={saving}
+          onClick={requestSave}
+          aria-label="Save collaborator splits"
+        >
+          {saving ? "Saving…" : "Save splits"}
+        </Button>
+      )}
 
     </div>
   );

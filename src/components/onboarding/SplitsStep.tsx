@@ -73,6 +73,7 @@ export function SplitsStep({ slug, onNext }: SplitsStepProps) {
         initial={[{ to: publicKey ?? "", bps: 10000 }]}
         onSave={save}
         disabled={defaulting}
+        connectedAddress={publicKey ?? undefined}
       />
 
       <p className="text-xs text-fg-faint text-center">
