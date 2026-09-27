@@ -9,19 +9,20 @@
  * then to the backend.
  */
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { creatorApi, authApi, type CreatorProfile } from "@/lib/api";
 import { syncJarToChain } from "@/lib/jar";
 import { useAbortableRequest } from "@/hooks/useAbortableRequest";
 import { SplitsManager, type SplitRow } from "@/components/SplitsManager";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
+import { ErrorPanel } from "@/components/ui/ErrorPanel";
 
 export default function SplitsPage() {
   const { jwt, publicKey } = useWallet();
   const { data: creator, loading, error, run } = useAbortableRequest<CreatorProfile | null>(null);
 
-  useEffect(() => {
+  const fetchCreator = useCallback(() => {
     if (!jwt) return;
     // Fetch the creator profile via the auth/me + creator slug
     run((signal) =>
@@ -31,6 +32,10 @@ export default function SplitsPage() {
         .then((r) => r.creator),
     );
   }, [jwt, run]);
+
+  useEffect(() => {
+    fetchCreator();
+  }, [fetchCreator]);
 
   /**
    * Splits are written to the contract before the backend, because the
@@ -64,9 +69,7 @@ export default function SplitsPage() {
       </div>
 
       {error && (
-        <div className="rounded-xl bg-danger/10 border border-danger/20 px-4 py-3">
-          <p className="text-sm text-danger">{error}</p>
-        </div>
+        <ErrorPanel message={error} onRetry={fetchCreator} retrying={loading} />
       )}
 
       <Card>
