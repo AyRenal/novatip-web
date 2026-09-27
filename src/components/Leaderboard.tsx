@@ -7,9 +7,10 @@
  * Fetches on mount and re-fetches whenever a tip succeeds (via tipEvents).
  */
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { analyticsApi } from "@/lib/api";
 import { tipEvents, type TipSuccessPayload } from "@/lib/tipEvents";
+import { useAbortableRequest } from "@/hooks/useAbortableRequest";
 import { formatUsdc, shortenAddress } from "@novatip/sdk";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
@@ -34,45 +35,17 @@ interface LeaderboardProps {
 }
 
 export function Leaderboard({ jwt, limit = 10, slug }: LeaderboardProps) {
-  const [supporters, setSupporters] = useState<Supporter[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const { data: supporters, loading, error, run } = useAbortableRequest<Supporter[]>([]);
 
   const fetchSupporters = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    analyticsApi
-      .topSupporters(jwt, limit, { signal: controller.signal })
-      .then((r) => {
-        setSupporters(r.supporters);
-        setError(null);
-      })
-      .catch((e: any) => {
-        if (e.code === "ABORTED") return;
-        setError(e.message);
-      })
-      .finally(() => {
-        if (abortControllerRef.current === controller) {
-          abortControllerRef.current = null;
-          setLoading(false);
-        }
-      });
-  }, [jwt, limit]);
+    run((signal) =>
+      analyticsApi.topSupporters(jwt, limit, { signal }).then((r) => r.supporters),
+    );
+  }, [jwt, limit, run]);
 
   // Initial fetch
   useEffect(() => {
     fetchSupporters();
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
   }, [fetchSupporters]);
 
   // Re-fetch whenever a tip succeeds — gives the leaderboard a chance to
@@ -83,12 +56,7 @@ export function Leaderboard({ jwt, limit = 10, slug }: LeaderboardProps) {
       if (slug && payload.slug !== slug) return;
       fetchSupporters();
     });
-    return () => {
-      unsub();
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
+    return unsub;
   }, [fetchSupporters, slug]);
 
   return (

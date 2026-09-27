@@ -9,9 +9,10 @@
  *   - Top supporters leaderboard
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { analyticsApi } from "@/lib/api";
+import { useAbortableRequest } from "@/hooks/useAbortableRequest";
 import { formatUsdc } from "@novatip/sdk";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Leaderboard } from "@/components/Leaderboard";
@@ -44,42 +45,12 @@ function StatCard({
 
 export default function DashboardPage() {
   const { jwt } = useWallet();
-  const [totals,  setTotals]  = useState<Totals | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState<string | null>(null);
-
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const { data: totals, loading, error, run } = useAbortableRequest<Totals | null>(null);
 
   useEffect(() => {
     if (!jwt) return;
-
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    setLoading(true);
-    analyticsApi
-      .totals(jwt, { signal: controller.signal })
-      .then(setTotals)
-      .catch((e: any) => {
-        if (e.code === "ABORTED") return;
-        setError(e.message);
-      })
-      .finally(() => {
-        if (abortControllerRef.current === controller) {
-          abortControllerRef.current = null;
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, [jwt]);
+    run((signal) => analyticsApi.totals(jwt, { signal }));
+  }, [jwt, run]);
 
   const totalUsdc = totals
     ? formatUsdc(BigInt(totals.totalAmountRaw), 2)

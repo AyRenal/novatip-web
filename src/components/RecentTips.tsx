@@ -24,6 +24,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { analyticsApi } from "@/lib/api";
 import { tipEvents, type TipSuccessPayload } from "@/lib/tipEvents";
 import { usePolling } from "@/hooks/usePolling";
+import { useAbortableRequest } from "@/hooks/useAbortableRequest";
 import { formatUsdc, shortenAddress } from "@novatip/sdk";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -155,15 +156,12 @@ interface RecentTipsProps {
 }
 
 export function RecentTips({ jwt, limit = 20 }: RecentTipsProps) {
-  const [indexedTips, setIndexedTips] = useState<IndexedTip[]>([]);
+  const { data: indexedTips, loading, error, run, abort: abortInFlight } =
+    useAbortableRequest<IndexedTip[]>([]);
   const [pendingTips, setPendingTips] = useState<PendingTip[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [intervalMs, setIntervalMs] = useState(NORMAL_INTERVAL);
 
   const fastUntilRef = useRef<number | null>(null);
-
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Keep a ref to pendingTips so the fetch callback can read the latest value
   // without being re-created every time pendingTips changes.
@@ -171,45 +169,18 @@ export function RecentTips({ jwt, limit = 20 }: RecentTipsProps) {
   useEffect(() => { pendingRef.current = pendingTips; }, [pendingTips]);
 
   const fetchTips = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    analyticsApi
-      .recent(jwt, limit, { signal: controller.signal })
-      .then((r) => {
+    run((signal) =>
+      analyticsApi.recent(jwt, limit, { signal }).then((r) => {
         const fresh: IndexedTip[] = r.tips.map((t) => ({ kind: "indexed" as const, ...t }));
-        setIndexedTips(fresh);
-        setError(null);
 
         // Drop optimistic entries whose indexed counterpart has arrived,
         // matched by both address AND amount — not just address alone.
-        setPendingTips((prev) =>
-          prev.filter((p) => !fresh.some((t) => isMatch(t, p))),
-        // Drop optimistic entries that have now been indexed.
-        // Uses the shared isPendingConfirmed rule — the only place this logic lives.
-        setPendingTips((prev) =>
-          prev.filter((p) => !isPendingConfirmed(p, fresh)),
-        );
-      })
-      .catch((e: any) => {
-        if (e.code === "ABORTED") return;
-        setError(e.message);
-      })
-      .finally(() => {
-        if (abortControllerRef.current === controller) {
-          abortControllerRef.current = null;
-          setLoading(false);
-        }
-      });
-  }, [jwt, limit]);
+        setPendingTips((prev) => prev.filter((p) => !fresh.some((t) => isMatch(t, p))));
 
-  const abortInFlight = useCallback(() => {
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
-  }, []);
+        return fresh;
+      }),
+    );
+  }, [jwt, limit, run]);
 
   const poll = useCallback(() => {
     fetchTips();
@@ -223,11 +194,9 @@ export function RecentTips({ jwt, limit = 20 }: RecentTipsProps) {
     }
   }, [fetchTips]);
 
-  // Initial fetch + polling, paused while the tab is hidden
+  // Initial fetch + polling, paused while the tab is hidden.
+  // useAbortableRequest aborts any in-flight request on unmount itself.
   usePolling(poll, intervalMs, { onHidden: abortInFlight });
-
-  // Abort any in-flight request on unmount
-  useEffect(() => abortInFlight, [abortInFlight]);
 
   // On tip success: add optimistic entry + kick off fast polling
   useEffect(() => {
