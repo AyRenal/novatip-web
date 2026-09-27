@@ -27,17 +27,7 @@ import {
 import { isValidTipAmount } from "@novatip/sdk";
 import { tipEvents } from "@/lib/tipEvents";
 import { isLargeTip, isWithinTipCeiling } from "@/lib/tipAmount";
-
-// FRONTEND MESSAGE BYTE LIMIT
-// The contract counts UTF-8 bytes, not JavaScript UTF-16 code units.
-// Clients must use the same unit to avoid accepting messages the contract rejects.
-// TODO: Once the contract-side limit is exported by the SDK, import from @novatip/sdk.
-export const MAX_MESSAGE_BYTES = 280;
-
-/** Count how many UTF-8 bytes a string occupies. */
-function utf8ByteLength(str: string): number {
-  return new TextEncoder().encode(str).byteLength;
-}
+import { MAX_MESSAGE_BYTES, utf8ByteLength } from "@/lib/tipMessage";
 
 export interface Split {
   to:  string;

@@ -106,6 +106,20 @@ export function resolveSiteUrl(raw: string | undefined): string {
   return url.href;
 }
 
+// ── API request timeout ───────────────────────────────────────────────────────
+
+/**
+ * Default timeout for a backend API request, in milliseconds.
+ *
+ * The novatip-backend runs on a free tier that sleeps when idle, so a cold
+ * start regularly takes several seconds longer than a warm request. Ten
+ * seconds gives that cold start room to finish without leaving a genuinely
+ * stuck request hanging too long. Callers that know a particular request is
+ * slower or faster still than this can pass their own `timeout` in
+ * RequestOptions.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
 // ── Config object ─────────────────────────────────────────────────────────────
 
 export const config = {
