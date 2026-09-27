@@ -27,6 +27,7 @@ import { usePolling } from "@/hooks/usePolling";
 import { formatUsdc, shortenAddress } from "@novatip/sdk";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { timeAgo } from "@/lib/time";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,17 +62,6 @@ interface UnconfirmedTip extends Omit<PendingTip, "kind"> {
 type FeedEntry = IndexedTip | PendingTip | UnconfirmedTip;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-export function timeAgo(iso: string): string {
-  // Clamp to 0 so a client clock slightly behind the ledger reads "just now"
-  // rather than producing a negative value like "-4s ago".
-  const diff = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
 
 /**
  * Convert a dollar display string (e.g. "5" or "2.50") to raw stroops
