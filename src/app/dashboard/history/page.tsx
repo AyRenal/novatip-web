@@ -16,6 +16,7 @@ import { shortenAddress } from "@novatip/sdk";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { TimeAgo } from "@/components/ui/TimeAgo";
 import { cn } from "@/lib/utils";
 
 interface Tip {
@@ -166,9 +167,12 @@ export default function HistoryPage() {
                 </span>
 
                 {/* Time */}
-                <span className="col-span-2 text-right text-xs text-gray-500">
+                <TimeAgo
+                  iso={tip.ledgerAt}
+                  className="col-span-2 text-right text-xs text-gray-500"
+                >
                   {timeAgo(tip.ledgerAt)}
-                </span>
+                </TimeAgo>
               </div>
             ))}
           </div>
