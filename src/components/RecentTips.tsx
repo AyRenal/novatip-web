@@ -27,10 +27,11 @@ import { usePolling } from "@/hooks/usePolling";
 import { formatUsdc, shortenAddress } from "@novatip/sdk";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { timeAgo } from "@/lib/time";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface IndexedTip {
+export interface IndexedTip {
   kind: "indexed";
   id: string;
   fromAddress: string;
@@ -39,7 +40,7 @@ interface IndexedTip {
   ledgerAt: string;
 }
 
-interface PendingTip {
+export interface PendingTip {
   kind: "pending";
   /** Unique client-side id — never collides with real indexed ids. */
   id: string;
@@ -54,24 +55,13 @@ interface PendingTip {
   expiresAt: number;
 }
 
-interface UnconfirmedTip extends Omit<PendingTip, "kind"> {
+export interface UnconfirmedTip extends Omit<PendingTip, "kind"> {
   kind: "unconfirmed";
 }
 
-type FeedEntry = IndexedTip | PendingTip | UnconfirmedTip;
+export type FeedEntry = IndexedTip | PendingTip | UnconfirmedTip;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-export function timeAgo(iso: string): string {
-  // Clamp to 0 so a client clock slightly behind the ledger reads "just now"
-  // rather than producing a negative value like "-4s ago".
-  const diff = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
 
 /**
  * Convert a dollar display string (e.g. "5" or "2.50") to raw stroops
@@ -89,7 +79,7 @@ function displayAmountToStroops(display: string): bigint {
  * optimistic entry — same sender AND the raw amount corresponds to the dollar
  * value the user submitted (≥ to survive rounding and split scenarios).
  */
-function isMatch(indexed: IndexedTip, pending: PendingTip): boolean {
+export function isMatch(indexed: IndexedTip, pending: PendingTip): boolean {
   if (indexed.fromAddress !== pending.fromAddress) return false;
   try {
     return BigInt(indexed.amount) >= displayAmountToStroops(pending.displayAmount);
@@ -112,7 +102,7 @@ function isMatch(indexed: IndexedTip, pending: PendingTip): boolean {
  * downgraded to "unconfirmed" so the UI can signal that something may have
  * gone wrong — rather than leaving a pulsing "confirming…" row indefinitely.
  */
-function mergeWithPending(
+export function mergeWithPending(
   indexed: IndexedTip[],
   pending: PendingTip[],
   now = Date.now(),
@@ -183,10 +173,6 @@ export function RecentTips({ jwt, limit = 20 }: RecentTipsProps) {
         // matched by both address AND amount — not just address alone.
         setPendingTips((prev) =>
           prev.filter((p) => !fresh.some((t) => isMatch(t, p))),
-        // Drop optimistic entries that have now been indexed.
-        // Uses the shared isPendingConfirmed rule — the only place this logic lives.
-        setPendingTips((prev) =>
-          prev.filter((p) => !isPendingConfirmed(p, fresh)),
         );
       })
       .catch((e: any) => {
