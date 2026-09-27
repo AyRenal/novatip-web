@@ -31,7 +31,7 @@ import { timeAgo } from "@/lib/time";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface IndexedTip {
+export interface IndexedTip {
   kind: "indexed";
   id: string;
   fromAddress: string;
@@ -40,7 +40,7 @@ interface IndexedTip {
   ledgerAt: string;
 }
 
-interface PendingTip {
+export interface PendingTip {
   kind: "pending";
   /** Unique client-side id — never collides with real indexed ids. */
   id: string;
@@ -55,11 +55,11 @@ interface PendingTip {
   expiresAt: number;
 }
 
-interface UnconfirmedTip extends Omit<PendingTip, "kind"> {
+export interface UnconfirmedTip extends Omit<PendingTip, "kind"> {
   kind: "unconfirmed";
 }
 
-type FeedEntry = IndexedTip | PendingTip | UnconfirmedTip;
+export type FeedEntry = IndexedTip | PendingTip | UnconfirmedTip;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ function displayAmountToStroops(display: string): bigint {
  * optimistic entry — same sender AND the raw amount corresponds to the dollar
  * value the user submitted (≥ to survive rounding and split scenarios).
  */
-function isMatch(indexed: IndexedTip, pending: PendingTip): boolean {
+export function isMatch(indexed: IndexedTip, pending: PendingTip): boolean {
   if (indexed.fromAddress !== pending.fromAddress) return false;
   try {
     return BigInt(indexed.amount) >= displayAmountToStroops(pending.displayAmount);
@@ -102,7 +102,7 @@ function isMatch(indexed: IndexedTip, pending: PendingTip): boolean {
  * downgraded to "unconfirmed" so the UI can signal that something may have
  * gone wrong — rather than leaving a pulsing "confirming…" row indefinitely.
  */
-function mergeWithPending(
+export function mergeWithPending(
   indexed: IndexedTip[],
   pending: PendingTip[],
   now = Date.now(),
@@ -173,10 +173,6 @@ export function RecentTips({ jwt, limit = 20 }: RecentTipsProps) {
         // matched by both address AND amount — not just address alone.
         setPendingTips((prev) =>
           prev.filter((p) => !fresh.some((t) => isMatch(t, p))),
-        // Drop optimistic entries that have now been indexed.
-        // Uses the shared isPendingConfirmed rule — the only place this logic lives.
-        setPendingTips((prev) =>
-          prev.filter((p) => !isPendingConfirmed(p, fresh)),
         );
       })
       .catch((e: any) => {
