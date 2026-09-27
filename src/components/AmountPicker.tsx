@@ -16,18 +16,26 @@ import { Input } from "@/components/ui/Input";
 import { isValidTipAmount, usdcToStroops } from "@novatip/sdk";
 import { MAX_CUSTOM_TIP_USDC, isWithinTipCeiling } from "@/lib/tipAmount";
 
-const PRESETS = ["1", "2", "5", "10", "25"];
+/** Used when a creator hasn't configured their own preset amounts. */
+export const DEFAULT_AMOUNT_PRESETS = ["1", "2", "5", "10", "25"];
 
 interface AmountPickerProps {
   value:     string;
   onChange:  (value: string) => void;
   disabled?: boolean;
+  /** Preset amount buttons, in display order. Defaults to DEFAULT_AMOUNT_PRESETS. */
+  presets?:  string[];
 }
 
-export function AmountPicker({ value, onChange, disabled = false }: AmountPickerProps) {
+export function AmountPicker({
+  value,
+  onChange,
+  disabled = false,
+  presets = DEFAULT_AMOUNT_PRESETS,
+}: AmountPickerProps) {
   const [isCustom, setIsCustom] = useState(false);
 
-  const isPreset = PRESETS.includes(value);
+  const isPreset = presets.includes(value);
 
   function handlePreset(preset: string) {
     setIsCustom(false);
@@ -73,8 +81,11 @@ export function AmountPicker({ value, onChange, disabled = false }: AmountPicker
       <p className="text-sm font-medium text-fg-muted">Amount (USDC)</p>
 
       {/* Preset buttons */}
-      <div className="grid grid-cols-5 gap-2">
-        {PRESETS.map((preset) => (
+      <div
+        className="grid gap-2"
+        style={{ gridTemplateColumns: `repeat(${presets.length}, minmax(0, 1fr))` }}
+      >
+        {presets.map((preset) => (
           <button
             key={preset}
             type="button"
