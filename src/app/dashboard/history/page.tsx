@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { TimeAgo } from "@/components/ui/TimeAgo";
 import { cn } from "@/lib/utils";
+import { timeAgo } from "@/lib/time";
 
 interface Tip {
   id:          string;
@@ -30,18 +31,6 @@ interface Tip {
 // Every request asks for one page, never the running total, so it stays
 // within the backend's cap however far back the creator scrolls.
 const PAGE_SIZE = Math.min(20, RECENT_TIPS_MAX_LIMIT);
-
-function timeAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60)   return `${diff}s ago`;
-  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day:   "numeric",
-    year:  "numeric",
-  });
-}
 
 export default function HistoryPage() {
   const { jwt }  = useWallet();
