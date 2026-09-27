@@ -95,23 +95,23 @@ export default function HistoryPage() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Tip History</h1>
-        <p className="text-sm text-gray-400 mt-1">
+        <h1 className="text-2xl font-bold text-fg">Tip History</h1>
+        <p className="text-sm text-fg-subtle mt-1">
           All tips received, newest first
         </p>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3">
-          <p className="text-sm text-red-400">{error}</p>
+        <div className="rounded-xl bg-danger/10 border border-danger/20 px-4 py-3">
+          <p className="text-sm text-danger">{error}</p>
         </div>
       )}
 
       {/* Table */}
       <Card glass={false}>
         {/* Column headers */}
-        <div className="grid grid-cols-12 gap-4 pb-3 border-b border-white/10 text-xs text-gray-500 uppercase tracking-wider">
+        <div className="grid grid-cols-12 gap-4 pb-3 border-b border-hairline text-xs text-fg-faint uppercase tracking-wider">
           <span className="col-span-4">From</span>
           <span className="col-span-2 text-right">Amount</span>
           <span className="col-span-4">Message</span>
@@ -120,13 +120,13 @@ export default function HistoryPage() {
 
         {/* Loading skeletons */}
         {loading && tips.length === 0 && (
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-hairline">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="grid grid-cols-12 gap-4 py-3 animate-pulse">
-                <div className="col-span-4 h-4 rounded bg-white/10" />
-                <div className="col-span-2 h-4 rounded bg-white/10" />
-                <div className="col-span-4 h-4 rounded bg-white/5" />
-                <div className="col-span-2 h-4 rounded bg-white/10" />
+                <div className="col-span-4 h-4 rounded bg-surface-strong" />
+                <div className="col-span-2 h-4 rounded bg-surface-strong" />
+                <div className="col-span-4 h-4 rounded bg-fg/5" />
+                <div className="col-span-2 h-4 rounded bg-surface-strong" />
               </div>
             ))}
           </div>
@@ -134,39 +134,39 @@ export default function HistoryPage() {
 
         {/* Empty state */}
         {!loading && tips.length === 0 && !error && (
-          <p className="text-sm text-gray-500 py-8 text-center">
+          <p className="text-sm text-fg-subtle py-8 text-center">
             No tips received yet. Share your link to get started!
           </p>
         )}
 
         {/* Tip rows */}
         {tips.length > 0 && (
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-hairline">
             {tips.map((tip) => (
               <div
                 key={tip.id}
-                className="grid grid-cols-12 gap-4 py-3 hover:bg-white/3 transition-colors rounded-lg"
+                className="grid grid-cols-12 gap-4 py-3 hover:bg-fg/5 transition-colors rounded-lg"
               >
                 {/* Sender */}
-                <span className="col-span-4 font-mono text-sm text-gray-300 truncate">
+                <span className="col-span-4 font-mono text-sm text-fg-muted truncate">
                   {shortenAddress(tip.fromAddress)}
                 </span>
 
                 {/* Amount */}
-                <span className="col-span-2 text-right text-sm font-semibold text-brand-400">
+                <span className="col-span-2 text-right text-sm font-semibold text-accent">
                   ${formatUsdc(BigInt(tip.amount), 2)}
                 </span>
 
                 {/* Message */}
                 <span className={cn(
                   "col-span-4 text-sm truncate",
-                  tip.message ? "text-gray-300" : "text-gray-600 italic",
+                  tip.message ? "text-fg-muted" : "text-fg-dim italic",
                 )}>
                   {tip.message || "No message"}
                 </span>
 
                 {/* Time */}
-                <span className="col-span-2 text-right text-xs text-gray-500">
+                <span className="col-span-2 text-right text-xs text-fg-faint">
                   {timeAgo(tip.ledgerAt)}
                 </span>
               </div>
@@ -176,7 +176,7 @@ export default function HistoryPage() {
 
         {hasMore && tips.length > 0 && (
           <div className="pt-4 flex flex-col items-center gap-2">
-            {pageError && <p className="text-xs text-red-400">{pageError}</p>}
+            {pageError && <p className="text-xs text-danger">{pageError}</p>}
             <Button
               variant="ghost"
               size="sm"
@@ -189,7 +189,7 @@ export default function HistoryPage() {
         )}
 
         {!hasMore && tips.length > 0 && (
-          <p className="pt-4 text-center text-xs text-gray-500">
+          <p className="pt-4 text-center text-xs text-fg-faint">
             That&apos;s all your tips.
           </p>
         )}
