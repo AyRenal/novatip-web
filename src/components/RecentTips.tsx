@@ -128,9 +128,14 @@ export function mergeWithPending(
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const NORMAL_INTERVAL = 15_000; // 15 s — steady-state
-const FAST_INTERVAL = 3_000; // 3 s  — right after a tip
-const FAST_WINDOW_MS = 30_000; // stay fast for 30 s
+/** Steady-state poll interval — frequent enough to feel live without hammering the backend. */
+export const NORMAL_INTERVAL = 15_000;
+
+/** Poll interval while a tip is awaiting confirmation, so it shows up promptly once indexed. */
+export const FAST_INTERVAL = 3_000;
+
+/** How long to keep polling at FAST_INTERVAL after a tip, matching typical ledger-indexing latency. */
+export const FAST_WINDOW_MS = 30_000;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
