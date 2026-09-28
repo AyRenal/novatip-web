@@ -62,7 +62,10 @@ export default function DashboardPage() {
     setLoading(true);
     analyticsApi
       .totals(jwt, { signal: controller.signal })
-      .then(setTotals)
+      .then((data) => {
+        setTotals(data);
+        setError(null);
+      })
       .catch((e: any) => {
         if (e.code === "ABORTED") return;
         setError(e.message);
