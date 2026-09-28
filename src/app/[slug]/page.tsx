@@ -15,6 +15,7 @@ import { TipForm } from "@/components/TipForm";
 import { Badge } from "@/components/ui/Badge";
 import { QRDownload } from "@/components/QRDownload";
 import { PublicSupportersFeed } from "@/components/PublicSupportersFeed";
+import { Avatar } from "@/components/Avatar";
 
 interface Props {
   // Next 15 resolves route params asynchronously, so this is a Promise.
@@ -98,9 +99,6 @@ export default async function TipPage({ params }: Props) {
 
   const { creator, qrPngUrl, recentTips } = await resolveCreator(slug);
   const displayName = creator.displayName ?? `@${slug}`;
-  const avatarUrl   =
-    creator.avatarUrl ??
-    `https://api.dicebear.com/8.x/identicon/svg?seed=${slug}`;
 
   return (
     <>
@@ -111,12 +109,10 @@ export default async function TipPage({ params }: Props) {
           {/* Creator profile header */}
           <div className="flex flex-col items-center gap-3 mb-8 text-center">
             <div className="relative h-20 w-20 rounded-full overflow-hidden ring-2 ring-brand-500/30">
-              <Image
-                src={avatarUrl}
-                alt={`${displayName} avatar`}
-                fill
-                className="object-cover"
-                unoptimized
+              <Avatar
+                src={creator.avatarUrl}
+                displayName={displayName}
+                slug={slug}
               />
             </div>
             <div>
