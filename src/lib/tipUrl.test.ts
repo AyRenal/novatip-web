@@ -44,6 +44,11 @@ describe("getTipUrl – client side (window defined)", () => {
     const { getTipUrl } = require("./tipUrl");
     expect(getTipUrl("bob")).toBe(`${window.location.origin}/bob`);
   });
+
+  it("percent-encodes a slug containing characters that need encoding", () => {
+    const { getTipUrl } = require("./tipUrl");
+    expect(getTipUrl("john doe")).toBe(`${window.location.origin}/john%20doe`);
+  });
 });
 
 // ── Server-side branch ────────────────────────────────────────────────────────
@@ -101,6 +106,24 @@ describe("getTipUrl – server side (window undefined)", () => {
       const url = getTipUrl("dana");
       expect(url).toBe("https://myapp.example.io/dana");
       expect(url).not.toContain("novatip.xyz");
+    } finally {
+      globalThis.window = windowBackup;
+      vi.resetModules();
+    }
+  });
+
+  it("percent-encodes a slug containing characters that need encoding", async () => {
+    const windowBackup = globalThis.window;
+    // @ts-expect-error — intentionally removing window to simulate SSR
+    delete globalThis.window;
+
+    try {
+      vi.resetModules();
+      vi.doMock("./config", () => ({
+        config: { siteUrl: "https://example.com/" },
+      }));
+      const { getTipUrl } = await import("./tipUrl");
+      expect(getTipUrl("john doe")).toBe("https://example.com/john%20doe");
     } finally {
       globalThis.window = windowBackup;
       vi.resetModules();

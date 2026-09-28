@@ -24,6 +24,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { analyticsApi } from "@/lib/api";
 import { tipEvents, type TipSuccessPayload } from "@/lib/tipEvents";
 import { usePolling } from "@/hooks/usePolling";
+import { useAbortableRequest } from "@/hooks/useAbortableRequest";
 import { formatUsdc, shortenAddress } from "@novatip/sdk";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -145,15 +146,20 @@ interface RecentTipsProps {
 }
 
 export function RecentTips({ jwt, limit = 20 }: RecentTipsProps) {
-  const [indexedTips, setIndexedTips] = useState<IndexedTip[]>([]);
+  const { data: indexedTips, loading, error, run, abort: abortInFlight } =
+    useAbortableRequest<IndexedTip[]>([]);
   const [pendingTips, setPendingTips] = useState<PendingTip[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [intervalMs, setIntervalMs] = useState(NORMAL_INTERVAL);
 
   const fastUntilRef = useRef<number | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Tracks ids from the previous successful fetch so new arrivals can be
+  // announced. Stays null until the first fetch resolves, which is how we
+  // avoid announcing the initial page load as "new" tips.
+  const previousIndexedIdsRef = useRef<Set<string> | null>(null);
+  const [announcement, setAnnouncement] = useState("");
 
   // Keep a ref to pendingTips so the fetch callback can read the latest value
   // without being re-created every time pendingTips changes.
@@ -161,24 +167,29 @@ export function RecentTips({ jwt, limit = 20 }: RecentTipsProps) {
   useEffect(() => { pendingRef.current = pendingTips; }, [pendingTips]);
 
   const fetchTips = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    analyticsApi
-      .recent(jwt, limit, { signal: controller.signal })
-      .then((r) => {
+    run((signal) =>
+      analyticsApi.recent(jwt, limit, { signal }).then((r) => {
         const fresh: IndexedTip[] = r.tips.map((t) => ({ kind: "indexed" as const, ...t }));
-        setIndexedTips(fresh);
-        setError(null);
 
         // Drop optimistic entries whose indexed counterpart has arrived,
         // matched by both address AND amount — not just address alone.
         setPendingTips((prev) =>
           prev.filter((p) => !fresh.some((t) => isMatch(t, p))),
         );
+
+        // Announce newly-arrived tips, skipping the very first fetch so the
+        // initial page load isn't read out as an "arrival".
+        if (previousIndexedIdsRef.current !== null) {
+          const newCount = fresh.filter(
+            (t) => !previousIndexedIdsRef.current!.has(t.id),
+          ).length;
+          if (newCount > 0) {
+            setAnnouncement(
+              `${newCount} new tip${newCount !== 1 ? "s" : ""} received`,
+            );
+          }
+        }
+        previousIndexedIdsRef.current = new Set(fresh.map((t) => t.id));
       })
       .catch((e: any) => {
         if (e.code === "ABORTED") return;
@@ -209,11 +220,9 @@ export function RecentTips({ jwt, limit = 20 }: RecentTipsProps) {
     }
   }, [fetchTips]);
 
-  // Initial fetch + polling, paused while the tab is hidden
+  // Initial fetch + polling, paused while the tab is hidden.
+  // useAbortableRequest aborts any in-flight request on unmount itself.
   usePolling(poll, intervalMs, { onHidden: abortInFlight });
-
-  // Abort any in-flight request on unmount
-  useEffect(() => abortInFlight, [abortInFlight]);
 
   // On tip success: add optimistic entry + kick off fast polling
   useEffect(() => {
@@ -246,11 +255,18 @@ export function RecentTips({ jwt, limit = 20 }: RecentTipsProps) {
         <div className="flex items-center justify-between">
           <CardTitle>Recent Tips</CardTitle>
           <span className="flex items-center gap-1.5 text-xs text-fg-faint">
-            <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse-slow" />
+            <span
+              aria-hidden="true"
+              className="h-1.5 w-1.5 rounded-full bg-success animate-pulse-slow"
+            />
             Live
           </span>
         </div>
       </CardHeader>
+
+      <div aria-live="polite" role="status" className="sr-only">
+        {announcement}
+      </div>
 
       {loading && (
         <div className="space-y-3">
