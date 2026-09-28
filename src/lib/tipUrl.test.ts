@@ -130,3 +130,28 @@ describe("getTipUrl – server side (window undefined)", () => {
     }
   });
 });
+
+// ── getQrPngUrl ─────────────────────────────────────────────────────────────
+
+describe("getQrPngUrl", () => {
+  it("builds the QR PNG URL by appending /qr/<slug>/png to config.apiUrl", async () => {
+    const { getQrPngUrl } = await import("./tipUrl");
+    const { config } = await import("./config");
+    expect(getQrPngUrl("alice")).toBe(`${config.apiUrl}/qr/alice/png`);
+  });
+
+  it("handles trailing slashes in config.apiUrl", async () => {
+    vi.resetModules();
+    vi.doMock("./config", () => ({
+      config: { apiUrl: "http://localhost:3001/api/v1/" },
+    }));
+    const { getQrPngUrl } = await import("./tipUrl");
+    expect(getQrPngUrl("bob")).toBe("http://localhost:3001/api/v1/qr/bob/png");
+  });
+
+  it("percent-encodes the slug in the QR PNG URL", async () => {
+    const { getQrPngUrl } = await import("./tipUrl");
+    const { config } = await import("./config");
+    expect(getQrPngUrl("john doe")).toBe(`${config.apiUrl}/qr/john%20doe/png`);
+  });
+});
