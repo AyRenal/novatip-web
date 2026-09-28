@@ -8,7 +8,7 @@
  * sender address, amount, message, and ledger timestamp.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { analyticsApi, RECENT_TIPS_MAX_LIMIT } from "@/lib/api";
 import { formatUsdc } from "@novatip/sdk";
@@ -39,14 +39,23 @@ export default function HistoryPage() {
   const [hasMore, setHasMore] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Each call fetches one page starting after the rows already shown and
   // appends it, so a load more costs one page rather than the whole history,
   // and existing rows are never replaced.
   const fetchPage = useCallback((offset: number) => {
     if (!jwt) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     analyticsApi
-      .recent(jwt, PAGE_SIZE, undefined, offset)
+      .recent(jwt, PAGE_SIZE, { signal: controller.signal }, offset)
       .then((r) => {
         // A tip indexed between pages shifts the offset by one, which would
         // repeat the last row of the previous page — skip ids already shown.
@@ -59,12 +68,19 @@ export default function HistoryPage() {
         setPageError(null);
       })
       .catch((e: Error) => {
+        // Ignore aborted requests — component is unmounted or jwt changed.
+        if ((e as any).code === "ABORTED") return;
         // A failed later page must not replace the rows already shown with
         // a page-level error — report it beside the button so it can retry.
         if (offset === 0) setError(e.message);
         else setPageError("Couldn't load more tips. Try again.");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+          setLoading(false);
+        }
+      });
   }, [jwt]);
 
   useEffect(() => {
@@ -72,6 +88,12 @@ export default function HistoryPage() {
     setHasMore(true);
     setPageError(null);
     fetchPage(0);
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [fetchPage]);
 
   function loadMore() {
@@ -179,7 +201,9 @@ export default function HistoryPage() {
 
         {!hasMore && tips.length > 0 && (
           <p className="pt-4 text-center text-xs text-gray-500">
-            That&apos;s all your tips.
+            {tips.length >= RECENT_TIPS_MAX_LIMIT
+              ? `Showing all tips (${RECENT_TIPS_MAX_LIMIT} max)`
+              : "That\u2019s all your tips."}
           </p>
         )}
       </Card>
