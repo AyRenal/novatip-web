@@ -253,7 +253,7 @@ export function RecentTips({ jwt, limit = 20 }: RecentTipsProps) {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>Recent Tips</CardTitle>
+          <CardTitle level={2}>Recent Tips</CardTitle>
           <span className="flex items-center gap-1.5 text-xs text-fg-faint">
             <span
               aria-hidden="true"

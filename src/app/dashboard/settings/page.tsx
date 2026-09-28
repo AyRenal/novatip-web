@@ -205,7 +205,7 @@ export default function SettingsPage() {
       <form onSubmit={handleSave} noValidate>
         <Card glass={false}>
           <CardHeader>
-            <CardTitle>Public profile</CardTitle>
+            <CardTitle level={2}>Public profile</CardTitle>
           </CardHeader>
 
           {loadLoading ? (

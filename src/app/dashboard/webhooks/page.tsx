@@ -219,7 +219,7 @@ export default function WebhooksPage() {
       {/* Add form */}
       <Card glass={false}>
         <CardHeader>
-          <CardTitle>Add endpoint</CardTitle>
+          <CardTitle level={2}>Add endpoint</CardTitle>
         </CardHeader>
         <form onSubmit={handleAdd} className="flex flex-col gap-4" noValidate>
           <Input
@@ -254,7 +254,7 @@ export default function WebhooksPage() {
       {/* Webhooks list */}
       <Card glass={false}>
         <CardHeader>
-          <CardTitle>Registered endpoints</CardTitle>
+          <CardTitle level={2}>Registered endpoints</CardTitle>
         </CardHeader>
 
         {listLoading && (
