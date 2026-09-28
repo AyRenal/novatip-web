@@ -226,7 +226,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </aside>
 
         {/* Page content */}
-        <main className="flex-1 min-w-0" key={sessionKey}>
+        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 outline-none" key={sessionKey}>
           {children}
         </main>
 

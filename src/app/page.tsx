@@ -8,7 +8,7 @@ export default function HomePage() {
   return (
     <>
       <Header />
-      <main className="mx-auto max-w-4xl px-4 py-24 text-center">
+      <main id="main-content" tabIndex={-1} className="mx-auto max-w-4xl px-4 py-24 text-center outline-none">
         <Suspense fallback={null}>
           <ConnectPrompt />
         </Suspense>
