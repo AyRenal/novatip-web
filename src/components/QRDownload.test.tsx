@@ -64,6 +64,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// ── Accessible name ──────────────────────────────────────────────────────────
+
+describe("QRDownload – QR graphic", () => {
+  it("exposes an accessible name describing whose tip page it opens", () => {
+    render(<QRDownload slug={SLUG} pngUrl={PNG_URL} />);
+
+    expect(screen.getByRole("img", { name: `QR code for @${SLUG} tip page` })).toBeInTheDocument();
+  });
+});
+
 // ── Successful copy ───────────────────────────────────────────────────────────
 
 describe("QRDownload – successful copy", () => {
