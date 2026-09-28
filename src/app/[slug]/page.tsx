@@ -6,6 +6,7 @@
  * client-side TipForm for wallet interaction.
  */
 
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import type { Metadata } from "next";
@@ -33,28 +34,19 @@ function isUnclaimedSlug(error: unknown): boolean {
 }
 
 /**
- * Resolve the creator, or hand control to the right boundary.
- *
- * Only a 404 from the resolver means the slug is unclaimed.  Every other
- * failure — a 500, a timeout, the backend being unreachable — is our fault,
- * and rendering "no tip jar here" for those would tell a visitor a creator
- * does not exist when they do, sending them away for good over a blip.  Those
- * are rethrown so app/error.tsx offers a retry instead.
+ * Resolve the creator once per request via React's cache().
+ * Both generateMetadata and TipPage call this function, but resolverApi.resolve
+ * is only executed once per request pass.
  */
-async function resolveCreator(slug: string): Promise<ResolvedPage> {
-  try {
-    return await resolverApi.resolve(slug);
-  } catch (error) {
-    if (isUnclaimedSlug(error)) notFound();
-    throw error;
-  }
-}
+const resolveCreator = cache(async (slug: string): Promise<ResolvedPage> => {
+  return await resolverApi.resolve(slug);
+});
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const slug = normalizeSlug((await params).slug);
 
   try {
-    const { creator, tipUrl } = await resolverApi.resolve(slug);
+    const { creator, tipUrl } = await resolveCreator(slug);
     const title       = `Tip ${creator.displayName ?? `@${slug}`} on Novatip`;
     const description = creator.bio ?? `Send USDC tips to @${slug} in seconds on Stellar.`;
 
@@ -97,7 +89,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function TipPage({ params }: Props) {
   const slug = normalizeSlug((await params).slug);
 
-  const { creator, qrPngUrl, recentTips } = await resolveCreator(slug);
+  let data: ResolvedPage;
+  try {
+    data = await resolveCreator(slug);
+  } catch (error) {
+    if (isUnclaimedSlug(error)) notFound();
+    throw error;
+  }
+
+  const { creator, qrPngUrl, recentTips } = data;
   const displayName = creator.displayName ?? `@${slug}`;
 
   return (
