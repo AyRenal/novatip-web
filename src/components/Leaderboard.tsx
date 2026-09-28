@@ -132,7 +132,9 @@ export function Leaderboard({ jwt, limit = 10, slug }: LeaderboardProps) {
             >
               {/* Rank */}
               <span className="w-6 text-center text-sm" aria-label={`Rank ${i + 1}`}>
-                {MEDALS[i] ?? <span className="text-fg-dim font-mono text-xs">{i + 1}</span>}
+                <span aria-hidden="true">
+                  {MEDALS[i] ?? <span className="text-fg-dim font-mono text-xs">{i + 1}</span>}
+                </span>
               </span>
 
               {/* Address */}
