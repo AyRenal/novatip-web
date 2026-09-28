@@ -23,14 +23,6 @@ import { WalletConnectButton } from "@/components/WalletConnectButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
-  { href: "/dashboard",           label: "Overview",  icon: "📊" },
-  { href: "/dashboard/history",   label: "History",   icon: "📜" },
-  { href: "/dashboard/splits",    label: "Splits",    icon: "✂️"  },
-  { href: "/dashboard/qr",        label: "QR & Link", icon: "🔗" },
-  { href: "/dashboard/webhooks",  label: "Webhooks",  icon: "🪝" },
-  { href: "/dashboard/settings",  label: "Settings",  icon: "⚙️" },
-];
 import { NAV_ITEMS } from "./nav";
 
 // ── Tip-link copy control ─────────────────────────────────────────────────────
@@ -202,6 +194,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
+
+      {/* Mobile nav */}
+      <nav
+        className="md:hidden border-b border-hairline bg-surface/50 px-4 py-2 flex items-center justify-around gap-1 overflow-x-auto"
+        aria-label="Dashboard navigation"
+      >
+        {NAV_ITEMS.map((item) => {
+          const isActive = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0",
+                isActive
+                  ? "bg-brand-500/20 text-accent border border-brand-500/20"
+                  : "text-fg-subtle hover:text-fg hover:bg-surface-strong",
+              )}
+              aria-current={isActive ? "page" : undefined}
+            >
+              <span className="text-base" aria-hidden="true">{item.icon}</span>
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
 
       <div className="flex flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8 gap-8">
 
