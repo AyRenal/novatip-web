@@ -18,13 +18,13 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-hairline bg-canvas/80 backdrop-blur-md">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl px-3 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
 
           {/* Logo */}
           <Link
             href="/"
-            className="flex items-center gap-2 group"
+            className="flex items-center gap-2 group shrink-0"
             aria-label="Novatip home"
           >
             {/* unoptimized: the optimizer refuses SVG unless dangerouslyAllowSVG
@@ -44,11 +44,11 @@ export function Header() {
           </Link>
 
           {/* Nav */}
-          <nav className="flex items-center gap-4">
+          <nav className="flex items-center gap-2 sm:gap-4">
             {isConnected && (
               <Link
                 href="/dashboard"
-                className="text-sm text-fg-subtle hover:text-fg transition-colors hidden sm:block"
+                className="text-sm text-fg-subtle hover:text-fg transition-colors whitespace-nowrap"
               >
                 Dashboard
               </Link>
