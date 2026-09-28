@@ -47,8 +47,12 @@ export function QRDownload({ slug, pngUrl, className }: QRDownloadProps) {
       const a    = document.createElement("a");
       a.href     = url;
       a.download = `novatip-${slug}.png`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 100);
     } catch {
       // Silently fail — user can still right-click the QR image
     } finally {
