@@ -13,3 +13,8 @@ export function getTipUrl(slug: string): string {
     : config.siteUrl.replace(/\/$/, "");
   return `${origin}/${encodeURIComponent(slug)}`;
 }
+
+export function getQrPngUrl(slug: string): string {
+  const baseUrl = config.apiUrl.replace(/\/+$/, "");
+  return `${baseUrl}/qr/${encodeURIComponent(slug)}/png`;
+}

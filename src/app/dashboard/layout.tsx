@@ -108,16 +108,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // When the wallet disconnects (or a different wallet connects), increment
+  // When a wallet connects or a different wallet connects, increment
   // sessionKey to force every dashboard child to remount and re-fetch. This
-  // ensures creator-specific data is never visible after a disconnect — on a
+  // ensures creator-specific data is never visible from a previous session — on a
   // shared machine, the previous creator's figures would otherwise linger until
   // a navigation happens to remount the components.
+  // Both isConnected and publicKey are listed in dependencies so ESLint is satisfied
+  // and the effect triggers when identity or connection changes, while the if (isConnected)
+  // check avoids remounts during disconnection.
   useEffect(() => {
     if (isConnected) {
       setSessionKey((k) => k + 1);
     }
-  }, [publicKey]);
+  }, [isConnected, publicKey]);
 
   // Redirect unauthenticated users to home
   useEffect(() => {

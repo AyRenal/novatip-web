@@ -11,7 +11,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { authApi } from "@/lib/api";
 import { useAbortableRequest } from "@/hooks/useAbortableRequest";
 import { QRDownload } from "@/components/QRDownload";
-import { config } from "@/lib/config";
+import { getQrPngUrl } from "@/lib/tipUrl";
 
 export default function QRPage() {
   const { jwt }  = useWallet();
@@ -24,9 +24,7 @@ export default function QRPage() {
     run((signal) => authApi.me(jwt, { signal }).then((r) => r.user.slug));
   }, [jwt, run]);
 
-  const pngUrl = slug
-    ? `${config.apiUrl.replace("/api/v1", "")}/api/v1/qr/${slug}/png`
-    : "";
+  const pngUrl = slug ? getQrPngUrl(slug) : "";
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in max-w-md">
