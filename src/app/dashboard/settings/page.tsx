@@ -17,6 +17,7 @@ import { creatorApi, authApi, type CreatorProfile } from "@/lib/api";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { Avatar } from "@/components/Avatar";
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
@@ -178,10 +179,7 @@ export default function SettingsPage() {
   const avatarPreviewUrl =
     avatarUrl && !validateAvatarUrl(avatarUrl)
       ? avatarUrl
-      : profile?.avatarUrl ??
-        (profile
-          ? `https://api.dicebear.com/8.x/identicon/svg?seed=${profile.slug}`
-          : null);
+      : profile?.avatarUrl ?? null;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -224,22 +222,13 @@ export default function SettingsPage() {
               {/* Avatar preview + URL */}
               <div className="flex items-start gap-4">
                 <div className="shrink-0">
-                  {avatarPreviewUrl ? (
-                    <div className="h-16 w-16 rounded-full overflow-hidden ring-2 ring-brand-500/20">
-                      <Image
-                        src={avatarPreviewUrl}
-                        alt="Avatar preview"
-                        width={64}
-                        height={64}
-                        className="object-cover w-full h-full"
-                        unoptimized
-                      />
-                    </div>
-                  ) : (
-                    <div className="h-16 w-16 rounded-full bg-surface-strong border border-hairline flex items-center justify-center">
-                      <span className="text-2xl text-fg-dim" aria-hidden="true">👤</span>
-                    </div>
-                  )}
+                  <div className="relative h-16 w-16 rounded-full overflow-hidden ring-2 ring-brand-500/20">
+                    <Avatar
+                      src={avatarPreviewUrl}
+                      displayName={displayName || profile?.displayName || profile?.slug || ""}
+                      slug={profile?.slug || ""}
+                    />
+                  </div>
                 </div>
                 <div className="flex-1 min-w-0">
                   <Input
