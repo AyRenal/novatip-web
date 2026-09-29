@@ -63,7 +63,7 @@ export function Leaderboard({ jwt, limit = 10, slug }: LeaderboardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Top Supporters</CardTitle>
+        <CardTitle level={2}>Top Supporters</CardTitle>
       </CardHeader>
 
       {loading && (

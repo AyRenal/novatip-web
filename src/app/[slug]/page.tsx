@@ -105,7 +105,7 @@ export default async function TipPage({ params }: Props) {
   return (
     <>
       <Header />
-      <main className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-start py-12 px-4">
+      <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-start py-12 px-4 outline-none">
         <div className="w-full max-w-md animate-slide-up">
 
           {/* Creator profile header */}

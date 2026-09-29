@@ -39,7 +39,7 @@ export default function ErrorPage({ error, reset }: ErrorPageProps) {
     <>
       <Header />
 
-      <main className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12">
+      <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12 outline-none">
         <Card className="w-full max-w-md text-center animate-slide-up">
           <div className="flex flex-col items-center gap-5 py-4">
 
