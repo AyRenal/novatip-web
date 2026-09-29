@@ -44,6 +44,11 @@ describe("getTipUrl – client side (window defined)", () => {
     const { getTipUrl } = require("./tipUrl");
     expect(getTipUrl("bob")).toBe(`${window.location.origin}/bob`);
   });
+
+  it("percent-encodes a slug containing characters that need encoding", () => {
+    const { getTipUrl } = require("./tipUrl");
+    expect(getTipUrl("john doe")).toBe(`${window.location.origin}/john%20doe`);
+  });
 });
 
 // ── Server-side branch ────────────────────────────────────────────────────────
@@ -105,5 +110,48 @@ describe("getTipUrl – server side (window undefined)", () => {
       globalThis.window = windowBackup;
       vi.resetModules();
     }
+  });
+
+  it("percent-encodes a slug containing characters that need encoding", async () => {
+    const windowBackup = globalThis.window;
+    // @ts-expect-error — intentionally removing window to simulate SSR
+    delete globalThis.window;
+
+    try {
+      vi.resetModules();
+      vi.doMock("./config", () => ({
+        config: { siteUrl: "https://example.com/" },
+      }));
+      const { getTipUrl } = await import("./tipUrl");
+      expect(getTipUrl("john doe")).toBe("https://example.com/john%20doe");
+    } finally {
+      globalThis.window = windowBackup;
+      vi.resetModules();
+    }
+  });
+});
+
+// ── getQrPngUrl ─────────────────────────────────────────────────────────────
+
+describe("getQrPngUrl", () => {
+  it("builds the QR PNG URL by appending /qr/<slug>/png to config.apiUrl", async () => {
+    const { getQrPngUrl } = await import("./tipUrl");
+    const { config } = await import("./config");
+    expect(getQrPngUrl("alice")).toBe(`${config.apiUrl}/qr/alice/png`);
+  });
+
+  it("handles trailing slashes in config.apiUrl", async () => {
+    vi.resetModules();
+    vi.doMock("./config", () => ({
+      config: { apiUrl: "http://localhost:3001/api/v1/" },
+    }));
+    const { getQrPngUrl } = await import("./tipUrl");
+    expect(getQrPngUrl("bob")).toBe("http://localhost:3001/api/v1/qr/bob/png");
+  });
+
+  it("percent-encodes the slug in the QR PNG URL", async () => {
+    const { getQrPngUrl } = await import("./tipUrl");
+    const { config } = await import("./config");
+    expect(getQrPngUrl("john doe")).toBe(`${config.apiUrl}/qr/john%20doe/png`);
   });
 });

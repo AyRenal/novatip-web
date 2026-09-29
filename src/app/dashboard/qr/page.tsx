@@ -6,55 +6,25 @@
  * Dashboard page showing the creator's QR code + share link.
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { authApi } from "@/lib/api";
+import { useAbortableRequest } from "@/hooks/useAbortableRequest";
 import { QRDownload } from "@/components/QRDownload";
-import { config } from "@/lib/config";
+import { getQrPngUrl } from "@/lib/tipUrl";
 
 export default function QRPage() {
   const { jwt }  = useWallet();
-  const [slug,   setSlug]   = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const { data: slug, loading, run } = useAbortableRequest<string | null>(null);
 
   useEffect(() => {
     if (!jwt) return;
+    // A failed lookup just leaves slug at null — same as never having one —
+    // so the error itself isn't surfaced here.
+    run((signal) => authApi.me(jwt, { signal }).then((r) => r.user.slug));
+  }, [jwt, run]);
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    setLoading(true);
-    authApi
-      .me(jwt, { signal: controller.signal })
-      .then((r) => {
-        setSlug(r.user.slug);
-      })
-      .catch((e: any) => {
-        if (e.code === "ABORTED") return;
-        setSlug(null);
-      })
-      .finally(() => {
-        if (abortControllerRef.current === controller) {
-          abortControllerRef.current = null;
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, [jwt]);
-
-  const pngUrl = slug
-    ? `${config.apiUrl.replace("/api/v1", "")}/api/v1/qr/${slug}/png`
-    : "";
+  const pngUrl = slug ? getQrPngUrl(slug) : "";
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in max-w-md">

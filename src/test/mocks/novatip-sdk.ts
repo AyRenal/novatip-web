@@ -9,6 +9,7 @@
  *   - usdcToStroops: 1 USDC = 10_000_000 stroops (7 decimal places)
  *   - isValidTipAmount: amount must be > 0 and <= 1_000 USDC in stroops
  *   - formatUsdc: divide by 10^7, format to `decimals` places
+ *   - shortenAddress: first 4 + last 4 characters, joined by an ellipsis
  *   - validateSplitsBps: array must sum to exactly 10_000
  *   - ContractErrorCode / NovatipContractError: the numbers are the contract's
  *     public interface, so they are mirrored from contracts/tip-splitter's
@@ -33,6 +34,11 @@ export function formatUsdc(stroops: bigint, decimals = 2): string {
   const fraction = stroops % 10_000_000n;
   const fracStr  = fraction.toString().padStart(7, "0").slice(0, decimals);
   return `${whole}.${fracStr}`;
+}
+
+export function shortenAddress(address: string): string {
+  if (address.length <= 9) return address;
+  return `${address.slice(0, 4)}…${address.slice(-4)}`;
 }
 
 export function validateSplitsBps(bpsArray: number[]): boolean {

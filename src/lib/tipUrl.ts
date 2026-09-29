@@ -11,5 +11,10 @@ export function getTipUrl(slug: string): string {
   const origin = typeof window !== "undefined"
     ? window.location.origin
     : config.siteUrl.replace(/\/$/, "");
-  return `${origin}/${slug}`;
+  return `${origin}/${encodeURIComponent(slug)}`;
+}
+
+export function getQrPngUrl(slug: string): string {
+  const baseUrl = config.apiUrl.replace(/\/+$/, "");
+  return `${baseUrl}/qr/${encodeURIComponent(slug)}/png`;
 }

@@ -53,8 +53,12 @@ export function QRDownload({ slug, pngUrl, className }: QRDownloadProps) {
       const a    = document.createElement("a");
       a.href     = url;
       a.download = `novatip-${slug}.png`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 100);
     } catch {
       setDownloadError("Couldn\u2019t fetch the QR code. Please try again.");
     } finally {
@@ -66,10 +70,7 @@ export function QRDownload({ slug, pngUrl, className }: QRDownloadProps) {
     <div className={cn("flex flex-col items-center gap-4", className)}>
 
       {/* QR preview — always on white so scanners keep their contrast */}
-      <div
-        className="rounded-2xl bg-white p-4 shadow-xl shadow-black/10 dark:shadow-black/30"
-        aria-label={`QR code for @${slug} tip page`}
-      >
+      <div className="rounded-2xl bg-white p-4 shadow-xl shadow-black/10 dark:shadow-black/30">
         <QRCodeSVG
           value={tipUrl}
           size={180}
@@ -77,6 +78,7 @@ export function QRDownload({ slug, pngUrl, className }: QRDownloadProps) {
           fgColor="#000000"
           level="M"
           includeMargin={false}
+          title={`QR code for @${slug} tip page`}
         />
       </div>
 

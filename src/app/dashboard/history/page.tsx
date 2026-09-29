@@ -121,69 +121,74 @@ export default function HistoryPage() {
 
       {/* Table */}
       <Card glass={false}>
-        {/* Column headers */}
-        <div className="grid grid-cols-12 gap-4 pb-3 border-b border-white/10 text-xs text-gray-500 uppercase tracking-wider">
-          <span className="col-span-4">From</span>
-          <span className="col-span-2 text-right">Amount</span>
-          <span className="col-span-4">Message</span>
-          <span className="col-span-2 text-right">When</span>
+        <div role="table" aria-label="Tip history" className="w-full">
+          {/* Column headers */}
+          <div role="rowgroup">
+            <div role="row" className="grid grid-cols-12 gap-4 pb-3 border-b border-white/10 text-xs text-gray-500 uppercase tracking-wider">
+              <span role="columnheader" className="col-span-4">From</span>
+              <span role="columnheader" className="col-span-2 text-right">Amount</span>
+              <span role="columnheader" className="col-span-4">Message</span>
+              <span role="columnheader" className="col-span-2 text-right">When</span>
+            </div>
+          </div>
+
+          {/* Loading skeletons */}
+          {loading && tips.length === 0 && (
+            <div role="rowgroup" className="divide-y divide-white/5">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} role="row" className="grid grid-cols-12 gap-4 py-3 animate-pulse">
+                  <div role="cell" className="col-span-4 h-4 rounded bg-white/10" />
+                  <div role="cell" className="col-span-2 h-4 rounded bg-white/10" />
+                  <div role="cell" className="col-span-4 h-4 rounded bg-white/5" />
+                  <div role="cell" className="col-span-2 h-4 rounded bg-white/10" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!loading && tips.length === 0 && !error && (
+            <p className="text-sm text-gray-500 py-8 text-center">
+              No tips received yet. Share your link to get started!
+            </p>
+          )}
+
+          {/* Tip rows */}
+          {tips.length > 0 && (
+            <div role="rowgroup" className="divide-y divide-white/5">
+              {tips.map((tip) => (
+                <div
+                  key={tip.id}
+                  role="row"
+                  className="grid grid-cols-12 gap-4 py-3 hover:bg-white/3 transition-colors rounded-lg"
+                >
+                  {/* Sender */}
+                  <span role="cell" className="col-span-4 font-mono text-sm text-gray-300 truncate">
+                    {shortenAddress(tip.fromAddress)}
+                  </span>
+
+                  {/* Amount */}
+                  <span role="cell" className="col-span-2 text-right text-sm font-semibold text-brand-400">
+                    ${formatUsdc(BigInt(tip.amount), 2)}
+                  </span>
+
+                  {/* Message */}
+                  <span role="cell" className={cn(
+                    "col-span-4 text-sm truncate",
+                    tip.message ? "text-gray-300" : "text-gray-600 italic",
+                  )}>
+                    {tip.message || "No message"}
+                  </span>
+
+                  {/* Time */}
+                  <span role="cell" className="col-span-2 text-right text-xs text-gray-500">
+                    {timeAgo(tip.ledgerAt)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-
-        {/* Loading skeletons */}
-        {loading && tips.length === 0 && (
-          <div className="divide-y divide-white/5">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="grid grid-cols-12 gap-4 py-3 animate-pulse">
-                <div className="col-span-4 h-4 rounded bg-white/10" />
-                <div className="col-span-2 h-4 rounded bg-white/10" />
-                <div className="col-span-4 h-4 rounded bg-white/5" />
-                <div className="col-span-2 h-4 rounded bg-white/10" />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!loading && tips.length === 0 && !error && (
-          <p className="text-sm text-gray-500 py-8 text-center">
-            No tips received yet. Share your link to get started!
-          </p>
-        )}
-
-        {/* Tip rows */}
-        {tips.length > 0 && (
-          <div className="divide-y divide-white/5">
-            {tips.map((tip) => (
-              <div
-                key={tip.id}
-                className="grid grid-cols-12 gap-4 py-3 hover:bg-white/3 transition-colors rounded-lg"
-              >
-                {/* Sender */}
-                <span className="col-span-4 font-mono text-sm text-gray-300 truncate">
-                  {shortenAddress(tip.fromAddress)}
-                </span>
-
-                {/* Amount */}
-                <span className="col-span-2 text-right text-sm font-semibold text-brand-400">
-                  ${formatUsdc(BigInt(tip.amount), 2)}
-                </span>
-
-                {/* Message */}
-                <span className={cn(
-                  "col-span-4 text-sm truncate",
-                  tip.message ? "text-gray-300" : "text-gray-600 italic",
-                )}>
-                  {tip.message || "No message"}
-                </span>
-
-                {/* Time */}
-                <span className="col-span-2 text-right text-xs text-gray-500">
-                  {timeAgo(tip.ledgerAt)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
 
         {hasMore && tips.length > 0 && (
           <div className="pt-4 flex flex-col items-center gap-2">

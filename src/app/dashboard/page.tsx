@@ -9,11 +9,13 @@
  *   - Top supporters leaderboard
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { analyticsApi } from "@/lib/api";
+import { useAbortableRequest } from "@/hooks/useAbortableRequest";
 import { formatUsdc } from "@novatip/sdk";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
+import { ErrorPanel } from "@/components/ui/ErrorPanel";
 import { Leaderboard } from "@/components/Leaderboard";
 import { RecentTips } from "@/components/RecentTips";
 import { TipChart } from "@/components/TipChart";
@@ -44,14 +46,12 @@ function StatCard({
 
 export default function DashboardPage() {
   const { jwt } = useWallet();
-  const [totals,  setTotals]  = useState<Totals | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState<string | null>(null);
+  const { data: totals, loading, error, run } = useAbortableRequest<Totals | null>(null);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
+  const fetchTotals = useCallback(() => {
     if (!jwt) return;
+    run((signal) => analyticsApi.totals(jwt, { signal }));
+  }, [jwt, run]);
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -99,9 +99,7 @@ export default function DashboardPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-xl bg-danger/10 border border-danger/20 px-4 py-3">
-          <p className="text-sm text-danger">{error}</p>
-        </div>
+        <ErrorPanel message={error} onRetry={fetchTotals} retrying={loading} />
       )}
 
       {/* Stat cards */}
