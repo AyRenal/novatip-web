@@ -11,7 +11,7 @@
  *   5. Error → inline error message with retry
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { AmountPicker } from "@/components/AmountPicker";
 import { TipSuccess } from "@/components/TipSuccess";
@@ -27,17 +27,8 @@ import {
 import { isValidTipAmount } from "@novatip/sdk";
 import { tipEvents } from "@/lib/tipEvents";
 import { isLargeTip, isWithinTipCeiling } from "@/lib/tipAmount";
-
-// FRONTEND MESSAGE BYTE LIMIT
-// The contract counts UTF-8 bytes, not JavaScript UTF-16 code units.
-// Clients must use the same unit to avoid accepting messages the contract rejects.
-// TODO: Once the contract-side limit is exported by the SDK, import from @novatip/sdk.
-export const MAX_MESSAGE_BYTES = 280;
-
-/** Count how many UTF-8 bytes a string occupies. */
-function utf8ByteLength(str: string): number {
-  return new TextEncoder().encode(str).byteLength;
-}
+import { DEFAULT_TIP_AMOUNT, getLastTipAmount, storeLastTipAmount } from "@/lib/lastTipAmount";
+import { MAX_MESSAGE_BYTES, utf8ByteLength } from "@/lib/tipMessage";
 
 export interface Split {
   to:  string;
@@ -56,11 +47,18 @@ type FormStep = "input" | "confirm" | "signing" | "success" | "error";
 export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
   const { publicKey, isConnected } = useWallet();
 
-  const [amount,  setAmount]  = useState("2");
+  const [amount,  setAmount]  = useState(DEFAULT_TIP_AMOUNT);
   const [message, setMessage] = useState("");
   const [step,    setStep]    = useState<FormStep>("input");
   const [error,   setError]   = useState<string | null>(null);
   const [txAmount, setTxAmount] = useState("");
+
+  // Restore the supporter's last tip amount after mount — not in the initial
+  // useState, so the server-rendered markup (which has no access to
+  // localStorage) matches the client's first paint and only then updates.
+  useEffect(() => {
+    setAmount(getLastTipAmount());
+  }, []);
 
   // ── Validation ─────────────────────────────────────────────────────────────
   const stroops    = (() => {
@@ -103,6 +101,7 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
 
       setTxAmount(amount);
       setStep("success");
+      storeLastTipAmount(amount);
 
       // Notify RecentTips and Leaderboard so they can refresh immediately
       tipEvents.emit({
@@ -141,7 +140,7 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
         slug={slug}
         onReset={() => {
           setStep("input");
-          setAmount("2");
+          setAmount(getLastTipAmount());
           setMessage("");
         }}
       />

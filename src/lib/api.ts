@@ -5,7 +5,7 @@
  * All methods throw ApiError on non-2xx responses.
  */
 
-import { config } from "./config";
+import { config, DEFAULT_REQUEST_TIMEOUT_MS } from "./config";
 import { emitUnauthorized } from "./authEvents";
 
 export interface RequestOptions extends Omit<RequestInit, "signal"> {
@@ -49,7 +49,7 @@ async function request<T>(
 
   if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
 
-  const timeoutMs = init.timeout ?? 10000;
+  const timeoutMs = init.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const callerSignal = init.signal;
 

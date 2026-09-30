@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "@/contexts/WalletContext";
+import { SkipLink } from "@/components/SkipLink";
 import { config } from "@/lib/config";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
@@ -76,6 +77,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
+        <SkipLink />
         <WalletProvider>
           {children}
         </WalletProvider>
