@@ -617,6 +617,45 @@ If it needed to survive a full page reload, you would persist it in
 `localStorage` yourself — but that is almost never the right call for a
 transient UI indicator.
 
+---
+
+### Error taxonomy
+
+Failures across the client arrive in four distinct shapes depending on where in the stack the failure originates. Knowing the error type determines where the error should be handled or translated into user-facing text:
+
+| Source | Error Type / Format | Example | Responsible Module |
+|---|---|---|---|
+| **Backend API** | `ApiError` class instance | `new ApiError(404, "NOT_FOUND", "Creator not found")` | `src/lib/api.ts` constructs `ApiError` from response payloads (`status`, `code`, `message`). UI components and pages inspect `err.status`/`err.code` or display `err.message`. |
+| **Contract (typed)** | `NovatipContractError` from `@novatip/sdk` | `NovatipContractError` with `code: ContractErrorCode.JarNotFound` | `@novatip/sdk` parses contract error codes from simulations. Feature modules such as `src/lib/jar.ts` inspect `err.code` or map contract codes to friendly messages. |
+| **Simulation (raw)** | Plain `Error` with simulation diagnostic string | `Error("HostError: Error(Contract, #3)")` | Soroban RPC / Stellar SDK produces raw diagnostic strings when simulation fails without a structured SDK contract error. Modules such as `src/lib/jar.ts` check `err.message` via pattern matching. |
+| **Transaction Submission** | Base64-encoded `TransactionResult` XDR | `Error("Transaction submission failed: AAAAAAAA+QT////6AAAAAA==")` | `src/lib/txerror.ts` (`describeSubmissionError`, `decodeResultCode`) decodes the base64 XDR using `@stellar/stellar-sdk` and translates result codes (e.g., `txBadAuth`, `txInsufficientBalance`, `txBadSeq`) into actionable human prose. |
+
+#### Detailed breakdown
+
+1. **Backend `ApiError` (`src/lib/api.ts`)**
+   - **When it occurs:** Thrown by `request()` in `src/lib/api.ts` whenever the REST backend returns a non-2xx HTTP status, as well as on network timeouts or aborted requests.
+   - **Shape:** `ApiError` instance with properties `status` (number), `code` (string), and `message` (string).
+   - **Example:** `throw new ApiError(404, "NOT_FOUND", "Creator not found");`
+   - **Handling:** UI components and route handlers (such as `src/app/[slug]/page.tsx`) catch `ApiError` and branch on `error.status` or `error.code` to show specific UI states (like 404 views) or display `error.message`.
+
+2. **Contract `NovatipContractError` (`@novatip/sdk`)**
+   - **When it occurs:** Thrown by `@novatip/sdk` methods when a Soroban contract call simulation fails with a known contract error code.
+   - **Shape:** An instance of `NovatipContractError` with a typed `code` property (`ContractErrorCode`).
+   - **Example:** `new NovatipContractError(ContractErrorCode.JarNotFound)`
+   - **Handling:** Catch blocks in feature modules (e.g. `src/lib/jar.ts`) check `err instanceof NovatipContractError` and test `err.code` against `ContractErrorCode` to handle known states (for example, treating `JarNotFound` as `null` during onboarding).
+
+3. **Raw Simulation String**
+   - **When it occurs:** Soroban RPC returns simulation diagnostic failures that the SDK could not parse into a typed `NovatipContractError` (e.g., host errors, budget exhaustion, or contract panics).
+   - **Shape:** A standard JavaScript `Error` whose `message` contains diagnostic strings like `"HostError: Error(Contract, #3)"`.
+   - **Example:** `new Error("Transaction simulation failed: HostError: Error(Contract, #3)")`
+   - **Handling:** Catch blocks perform regex or substring matching on `err.message` (e.g. `isJarNotFound` in `src/lib/jar.ts` tests `/Error\(Contract,\s*#3\)/`) to identify the failure when SDK error typing is unavailable.
+
+4. **Transaction Submission Failures (`src/lib/txerror.ts`)**
+   - **When it occurs:** The transaction was simulated successfully and signed by the wallet, but the Stellar network rejected it during submission.
+   - **Shape:** The SDK surfaces the error as a raw message ending in a base64-encoded `TransactionResult` XDR.
+   - **Example:** `Error: Transaction submission failed: AAAAAAAA+QT////6AAAAAA==`
+   - **Handling:** Wrap transaction submission promises with `describeSubmissionError()` from `src/lib/txerror.ts` (as in `src/lib/jar.ts`). `lib/txerror.ts` extracts the base64 XDR, decodes the union result code via `xdr.TransactionResult.fromXDR()`, and maps cryptic codes (such as `txBadAuth`, `txBadSeq`, `txInsufficientBalance`) to clear, actionable user messages (e.g. switching Freighter accounts or acquiring XLM).
+
 ## Accessibility
 
 Novatip is used on mobile, with keyboard navigation, and by screen-reader users.
