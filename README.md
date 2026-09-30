@@ -578,6 +578,37 @@ sees the tip immediately; the re-fetch in step 5 is the source of truth.
 
 ---
 
+### Optimistic tip feed and polling windows
+
+The `RecentTips` component (`src/components/RecentTips.tsx`) displays live tips on the creator dashboard. It combines optimistic updates with adaptive polling to balance responsiveness with backend load.
+
+#### How it works
+
+1. **Normal cadence (15s):** In steady state, `RecentTips` polls `analyticsApi.recent()` every 15 seconds (`NORMAL_INTERVAL = 15_000`). Polling automatically pauses when the browser tab is hidden and aborts in-flight requests via `usePolling` / `useAbortableRequest`.
+2. **Optimistic prepending on tip success:** When a tip succeeds, `TipForm` emits an event on `tipEvents`. `RecentTips` immediately creates an optimistic entry with `kind: "pending"`, a unique client ID, and an expiration timestamp `expiresAt = Date.now() + 30_000`, prepending it to the list with a "confirming…" status.
+3. **Fast polling burst (3s for 30s):** To catch the indexed tip as soon as possible, `RecentTips` temporarily switches its polling interval from 15 seconds to 3 seconds (`FAST_INTERVAL = 3_000`) for a 30-second window (`FAST_WINDOW_MS = 30_000`). Once the window expires, it reverts to the 15-second interval.
+4. **Reconciliation and replacement:** When a fresh batch of indexed tips arrives from the API, `mergeWithPending()` reconciles pending entries with indexed records. An entry is confirmed when `isMatch(indexed, pending)` matches both the sender's address AND the amount. Confirmed pending items are removed from state, seamlessly replaced by the persisted indexed record.
+5. **Downgrade to unconfirmed:** If the 30-second window elapses without the tip appearing in the indexed response, `mergeWithPending()` downgrades the entry to `kind: "unconfirmed"`, allowing the UI to notify the user rather than leaving a permanent "confirming…" state.
+
+#### Why indexer lag makes this necessary
+
+When a transaction is confirmed on Stellar by Soroban, the client's wallet knows immediately. However:
+- The backend indexer must observe the new ledger, extract the `TipReceived` contract event, process splits, and write records to PostgreSQL.
+- This indexing cycle introduces an inherent delay of **~5–10 seconds** (typically ~6 seconds).
+- Polling at a normal 15-second interval after transaction confirmation would force users to wait anywhere from 6 to 21 seconds to see their tip reflected.
+- The optimistic update provides instant visual confirmation, while the 3-second fast polling burst ensures the canonical indexed record replaces the placeholder almost as soon as the indexer commits it to the database.
+
+#### Failure modes to watch for
+
+Contributors modifying `RecentTips`, matching helpers, or event payloads should be vigilant about these potential pitfalls:
+
+- **Duplicate entries ("ghost duplicates"):** If `isMatch()` is too strict (e.g. strict string matching on amounts formatted differently) or if fields don't match, the optimistic entry will never be reconciled with the indexed counterpart. Both the pending item and the indexed record will render simultaneously.
+- **Premature clearing of pending tips:** If `isMatch()` matches *only* on sender address without verifying amount (or timestamp), an earlier tip from a returning supporter will falsely match and clear their new pending tip before it actually indexes.
+- **Stuck pending rows:** If the backend indexer drops an event, hangs, or experiences an extended lag exceeding 30 seconds, pending items without expiration handling would spin forever. Always preserve the `expiresAt` expiration check and the downgrade to `kind: "unconfirmed"`.
+- **In-flight request races on visibility change:** When a tab is backgrounded or brought into focus, un-aborted in-flight requests could resolve out of order. Ensure requests use abort signals so stale polling responses never overwrite newer state.
+
+---
+
 ### Worked example — adding a feature that needs shared state
 
 **Scenario:** you want to show a "New tip!" badge in the dashboard sidebar
