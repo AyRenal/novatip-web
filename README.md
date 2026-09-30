@@ -59,36 +59,72 @@ See the [novatip-backend README](https://github.com/Novatip/novatip-backend) for
 the full list of required environment variables (JWT secret, Stellar RPC URL,
 etc.).
 
-### 4. Build the SDK (for local SDK development only)
+### 4. SDK dependency: commit pin and bump workflow
 
 When you install this repo's dependencies with `npm install`, the SDK is
 fetched directly from GitHub (see the `@novatip/sdk` entry in `package.json`).
 No separate build step is needed for normal frontend work.
 
+#### Why the SDK is pinned to an exact commit
+
+In `package.json`, `@novatip/sdk` is pinned to an exact commit SHA:
+
+```json
+"@novatip/sdk": "github:Novatip/novatip-sdk#eeb581655ecc20b7a27ba16705bab62311e491b4"
+```
+
+The pin exists because an unpinned specification (such as pointing to a branch or loose tag) allowed a stale copy of the package to survive in deployment caches (e.g. Vercel and CI). This resulted in production builds deploying against an outdated SDK version that no longer matched updated contract interfaces or backend endpoints.
+
+> **Caution:** Do not loosen the dependency spec (e.g. to `github:Novatip/novatip-sdk#main`). Loosening the spec reintroduces the deployment cache bug.
+
+#### Working on the SDK locally
+
 If you want to work on the SDK and see your changes reflected in this app
 without publishing a new commit, switch the dependency to the local checkout:
 
 1. Edit `package.json` and change:
-   ```
+   ```json
    "@novatip/sdk": "github:Novatip/novatip-sdk#<commit>"
    ```
    to:
-   ```
+   ```json
    "@novatip/sdk": "file:../novatip-sdk"
    ```
 2. Build the SDK:
-   ```
+   ```bash
    cd ../novatip-sdk
    npm install
    npm run build
    ```
 3. Re-link in this repo:
-   ```
+   ```bash
    cd ../novatip-web
    npm install
    ```
 
 Revert the `package.json` change before opening a pull request.
+
+#### Bumping the SDK and regenerating the lockfile
+
+When changes to `novatip-sdk` are merged and need to be pulled into this app:
+
+1. Push or merge the changes in `novatip-sdk` and copy the full 40-character commit SHA.
+2. Update `package.json` and regenerate `package-lock.json`:
+   ```bash
+   npm install github:Novatip/novatip-sdk#<commit-sha>
+   ```
+   or edit `package.json` with the new commit SHA and run `npm install`.
+3. **Verify the lockfile uses HTTPS, not SSH:**
+   Check `package-lock.json` to confirm that the `resolved` entry for `@novatip/sdk` uses an HTTPS URL:
+   ```json
+   "resolved": "git+https://github.com/Novatip/novatip-sdk.git#<commit-sha>"
+   ```
+   The lockfile **must use an https URL, not ssh** (`git+ssh:` or `git@github.com:`). Automated CI environments and deployment platforms (e.g., Vercel) build without SSH keys, and an SSH URL in the lockfile will fail the deployment build.
+4. Verify tests and types:
+   ```bash
+   npm run typecheck
+   npm test
+   ```
 
 ### 5. Deploy the tip_splitter contract
 
