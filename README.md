@@ -155,6 +155,24 @@ rather than falling back to localhost and shipping broken previews; see
 query or fragment are normalised away, so `https://novatip.xyz` and
 `https://novatip.xyz/` are equivalent.
 
+### How NEXT_PUBLIC_ variables are read (important for contributors)
+
+`NEXT_PUBLIC_` variables are substituted into the client bundle **at build
+time** by Next.js matching the exact literal text `process.env.NEXT_PUBLIC_X`
+in source. A computed lookup — `process.env[key]` or
+`process.env[\`NEXT_PUBLIC_${name}\`]` — is **never replaced** and evaluates to
+`undefined` in the browser.
+
+The failure mode is subtle: the computed lookup works fine in `npm run dev`
+(Node has access to the real `process.env`), so a broken read is invisible
+locally and only surfaces in production after a deploy.
+
+`src/lib/config.ts` is written to respect this rule: every variable is read as
+a direct literal member access (`process.env.NEXT_PUBLIC_FOO`) rather than
+through a shared helper that takes a variable name. Do not refactor this into a
+loop or a helper function that receives the key as a string argument — every
+value will be `undefined` in the browser.
+
 ## Troubleshooting
 
 ### `Error: Missing required environment variable: NEXT_PUBLIC_TIP_SPLITTER_CONTRACT_ID`
@@ -222,6 +240,48 @@ match) in `.env.local`.
 
 ---
 
+### `Freighter is currently on XXXX…XXXX but this action is for YYYY…YYYY`
+
+**Cause:** The Freighter extension has a different account selected than the one
+that was connected when the session started. The transaction is built for the
+connected address, so a signature from a different key is rejected by the
+network as `txBAD_AUTH`. The app detects the mismatch before building the
+transaction and surfaces a readable message instead of raw XDR.
+
+**Fix:** Either:
+- Switch to the correct account in Freighter (the one shown in the error), **or**
+- Click **Disconnect** in the app and reconnect — the new connect flow will pick
+  up whichever account is currently active in Freighter.
+
+---
+
+### `XXXX…XXXX cannot receive USDC yet` when saving splits
+
+**Cause:** Every recipient in a split must hold a USDC trustline before the jar
+can be saved. The `tip_splitter` contract pays all recipients atomically, so a
+single account without a trustline causes the entire tip to fail — and it fails
+for the supporter, who did nothing wrong and cannot fix it. The app checks
+truslines at save time so the creator can act on it before any supporter is
+affected.
+
+The full message is one of:
+
+> `<addr> cannot receive USDC yet. That account needs to add a USDC trustline before it can be paid, otherwise every tip to this jar fails.`
+
+> `These accounts cannot receive USDC yet: <addr1>, <addr2>. Each needs to add a USDC trustline before it can be paid, otherwise every tip to this jar fails.`
+
+**Fix:** Each flagged account must add a USDC trustline. In Freighter:
+1. Open Freighter and switch to the flagged account.
+2. Go to **Manage Assets** → **Add Asset**.
+3. Search for **USDC** and add the Circle-issued token on the correct network
+   (Testnet or Mainnet to match `NEXT_PUBLIC_STELLAR_NETWORK`).
+4. Once added, retry saving the splits in the dashboard.
+
+A freshly funded Stellar account has no trustlines by default — this step is
+required for any new collaborator account before it can appear in a split.
+
+---
+
 ## Key Pages
 
 /                   - Home landing page
@@ -230,6 +290,33 @@ match) in `.env.local`.
 /dashboard          - Creator earnings overview
 /dashboard/splits   - Collaborator splits manager
 /dashboard/qr       - QR code and share link
+
+## Tip page URL shapes
+
+A tip page answers on two URL shapes:
+
+| Shape | Example | Notes |
+|---|---|---|
+| `/alice` | `https://novatip.xyz/alice` | **Canonical.** Share this link and use it in QR codes. |
+| `/@alice` | `https://novatip.xyz/@alice` | Also resolves. Both forms reach the same page. |
+
+**The `@` belongs to the jar ID, not to the URL.** When a creator claims the
+slug `alice`, the corresponding on-chain jar is registered as `@alice`. The web
+URL is `/alice` (without the `@`). Visiting `/@alice` also works — the page
+component strips the leading `@` via `normalizeSlug` before resolving the
+creator — but `/alice` is the form the app generates for share links and QR
+codes.
+
+**Relationship between slug and jar ID:**
+
+- **Slug** (`alice`) — the identifier stored in the backend database and used in
+  all web URLs.
+- **Jar ID** (`@alice`) — the on-chain identifier passed to the `tip_splitter`
+  contract. Derived from the slug by prepending `@`. See `jarIdForSlug` in
+  `src/lib/jar.ts`.
+
+This distinction matters when reading contract state or events: the contract
+always uses `@alice`, while the REST API and web routes always use `alice`.
 
 ## Tip Flow
 
@@ -293,6 +380,40 @@ The app is developed and tested against the following desktop browsers:
 Any browser that supports the Freighter extension and modern ES2020 features
 (optional chaining, nullish coalescing, `Promise.allSettled`) is expected to
 work. No IE11 or legacy-browser polyfills are included.
+
+---
+
+## Wallet account requirements
+
+Two conditions must be met before a tip or a split save can succeed. Both are
+enforced in code and produce clear messages, but they are worth knowing before
+you test with fresh accounts.
+
+### The signing account must match the connected account
+
+Freighter signs with whichever account is currently active in the extension.
+The transaction is built for the address that was connected at login, so if you
+switch accounts in Freighter between connecting and tipping, the network rejects
+the submission as `txBAD_AUTH`. The app catches this before submitting and shows:
+
+> `Freighter is currently on XXXX…XXXX but this action is for YYYY…YYYY. Switch accounts in Freighter, or reconnect your wallet to use the active one.`
+
+The guard lives in `src/lib/wallet.ts` (`assertActiveAccount`).
+
+### Every split recipient needs a USDC trustline
+
+On Stellar an account cannot hold an asset it has not explicitly opted in to.
+The `tip_splitter` contract pays all split recipients in a single atomic call,
+so one collaborator without a USDC trustline fails the whole tip. The app checks
+truslines when splits are saved rather than when a tip arrives, so the creator
+(not the supporter) sees the error at the moment they can act on it:
+
+> `<addr> cannot receive USDC yet. That account needs to add a USDC trustline before it can be paid, otherwise every tip to this jar fails.`
+
+A freshly created Stellar account has no trustlines. Any new collaborator must
+add the USDC asset in Freighter (**Manage Assets → Add Asset**) before being
+added to a split. The guard lives in `src/lib/trustline.ts`
+(`assertRecipientsCanReceive`).
 
 ---
 

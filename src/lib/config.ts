@@ -10,6 +10,17 @@
  * Variables are split into two groups:
  *   requirePublic — must be present and non-empty; throws at build/boot if not
  *   optionalPublic — safe to omit; falls back to a documented default
+ *
+ * IMPORTANT — NEXT_PUBLIC_ variables must be read as literal member accesses:
+ *   process.env.NEXT_PUBLIC_FOO          ✓ inlined at build time
+ *   process.env[key]                     ✗ always undefined in the browser
+ *   process.env[`NEXT_PUBLIC_${name}`]   ✗ always undefined in the browser
+ *
+ * Next.js substitutes these values by matching the exact literal text in the
+ * source. A computed lookup is never replaced and comes back undefined in the
+ * browser while continuing to work in `npm run dev` (where Node reads the real
+ * process.env). See the "How NEXT_PUBLIC_ variables are read" section in the
+ * README before refactoring this file.
  */
 
 import { StrKey } from "@stellar/stellar-sdk";
