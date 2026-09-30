@@ -59,36 +59,72 @@ See the [novatip-backend README](https://github.com/Novatip/novatip-backend) for
 the full list of required environment variables (JWT secret, Stellar RPC URL,
 etc.).
 
-### 4. Build the SDK (for local SDK development only)
+### 4. SDK dependency: commit pin and bump workflow
 
 When you install this repo's dependencies with `npm install`, the SDK is
 fetched directly from GitHub (see the `@novatip/sdk` entry in `package.json`).
 No separate build step is needed for normal frontend work.
 
+#### Why the SDK is pinned to an exact commit
+
+In `package.json`, `@novatip/sdk` is pinned to an exact commit SHA:
+
+```json
+"@novatip/sdk": "github:Novatip/novatip-sdk#eeb581655ecc20b7a27ba16705bab62311e491b4"
+```
+
+The pin exists because an unpinned specification (such as pointing to a branch or loose tag) allowed a stale copy of the package to survive in deployment caches (e.g. Vercel and CI). This resulted in production builds deploying against an outdated SDK version that no longer matched updated contract interfaces or backend endpoints.
+
+> **Caution:** Do not loosen the dependency spec (e.g. to `github:Novatip/novatip-sdk#main`). Loosening the spec reintroduces the deployment cache bug.
+
+#### Working on the SDK locally
+
 If you want to work on the SDK and see your changes reflected in this app
 without publishing a new commit, switch the dependency to the local checkout:
 
 1. Edit `package.json` and change:
-   ```
+   ```json
    "@novatip/sdk": "github:Novatip/novatip-sdk#<commit>"
    ```
    to:
-   ```
+   ```json
    "@novatip/sdk": "file:../novatip-sdk"
    ```
 2. Build the SDK:
-   ```
+   ```bash
    cd ../novatip-sdk
    npm install
    npm run build
    ```
 3. Re-link in this repo:
-   ```
+   ```bash
    cd ../novatip-web
    npm install
    ```
 
 Revert the `package.json` change before opening a pull request.
+
+#### Bumping the SDK and regenerating the lockfile
+
+When changes to `novatip-sdk` are merged and need to be pulled into this app:
+
+1. Push or merge the changes in `novatip-sdk` and copy the full 40-character commit SHA.
+2. Update `package.json` and regenerate `package-lock.json`:
+   ```bash
+   npm install github:Novatip/novatip-sdk#<commit-sha>
+   ```
+   or edit `package.json` with the new commit SHA and run `npm install`.
+3. **Verify the lockfile uses HTTPS, not SSH:**
+   Check `package-lock.json` to confirm that the `resolved` entry for `@novatip/sdk` uses an HTTPS URL:
+   ```json
+   "resolved": "git+https://github.com/Novatip/novatip-sdk.git#<commit-sha>"
+   ```
+   The lockfile **must use an https URL, not ssh** (`git+ssh:` or `git@github.com:`). Automated CI environments and deployment platforms (e.g., Vercel) build without SSH keys, and an SSH URL in the lockfile will fail the deployment build.
+4. Verify tests and types:
+   ```bash
+   npm run typecheck
+   npm test
+   ```
 
 ### 5. Deploy the tip_splitter contract
 
@@ -699,6 +735,37 @@ sees the tip immediately; the re-fetch in step 5 is the source of truth.
 
 ---
 
+### Optimistic tip feed and polling windows
+
+The `RecentTips` component (`src/components/RecentTips.tsx`) displays live tips on the creator dashboard. It combines optimistic updates with adaptive polling to balance responsiveness with backend load.
+
+#### How it works
+
+1. **Normal cadence (15s):** In steady state, `RecentTips` polls `analyticsApi.recent()` every 15 seconds (`NORMAL_INTERVAL = 15_000`). Polling automatically pauses when the browser tab is hidden and aborts in-flight requests via `usePolling` / `useAbortableRequest`.
+2. **Optimistic prepending on tip success:** When a tip succeeds, `TipForm` emits an event on `tipEvents`. `RecentTips` immediately creates an optimistic entry with `kind: "pending"`, a unique client ID, and an expiration timestamp `expiresAt = Date.now() + 30_000`, prepending it to the list with a "confirming…" status.
+3. **Fast polling burst (3s for 30s):** To catch the indexed tip as soon as possible, `RecentTips` temporarily switches its polling interval from 15 seconds to 3 seconds (`FAST_INTERVAL = 3_000`) for a 30-second window (`FAST_WINDOW_MS = 30_000`). Once the window expires, it reverts to the 15-second interval.
+4. **Reconciliation and replacement:** When a fresh batch of indexed tips arrives from the API, `mergeWithPending()` reconciles pending entries with indexed records. An entry is confirmed when `isMatch(indexed, pending)` matches both the sender's address AND the amount. Confirmed pending items are removed from state, seamlessly replaced by the persisted indexed record.
+5. **Downgrade to unconfirmed:** If the 30-second window elapses without the tip appearing in the indexed response, `mergeWithPending()` downgrades the entry to `kind: "unconfirmed"`, allowing the UI to notify the user rather than leaving a permanent "confirming…" state.
+
+#### Why indexer lag makes this necessary
+
+When a transaction is confirmed on Stellar by Soroban, the client's wallet knows immediately. However:
+- The backend indexer must observe the new ledger, extract the `TipReceived` contract event, process splits, and write records to PostgreSQL.
+- This indexing cycle introduces an inherent delay of **~5–10 seconds** (typically ~6 seconds).
+- Polling at a normal 15-second interval after transaction confirmation would force users to wait anywhere from 6 to 21 seconds to see their tip reflected.
+- The optimistic update provides instant visual confirmation, while the 3-second fast polling burst ensures the canonical indexed record replaces the placeholder almost as soon as the indexer commits it to the database.
+
+#### Failure modes to watch for
+
+Contributors modifying `RecentTips`, matching helpers, or event payloads should be vigilant about these potential pitfalls:
+
+- **Duplicate entries ("ghost duplicates"):** If `isMatch()` is too strict (e.g. strict string matching on amounts formatted differently) or if fields don't match, the optimistic entry will never be reconciled with the indexed counterpart. Both the pending item and the indexed record will render simultaneously.
+- **Premature clearing of pending tips:** If `isMatch()` matches *only* on sender address without verifying amount (or timestamp), an earlier tip from a returning supporter will falsely match and clear their new pending tip before it actually indexes.
+- **Stuck pending rows:** If the backend indexer drops an event, hangs, or experiences an extended lag exceeding 30 seconds, pending items without expiration handling would spin forever. Always preserve the `expiresAt` expiration check and the downgrade to `kind: "unconfirmed"`.
+- **In-flight request races on visibility change:** When a tab is backgrounded or brought into focus, un-aborted in-flight requests could resolve out of order. Ensure requests use abort signals so stale polling responses never overwrite newer state.
+
+---
+
 ### Worked example — adding a feature that needs shared state
 
 **Scenario:** you want to show a "New tip!" badge in the dashboard sidebar
@@ -737,6 +804,45 @@ dashboard-local UI state, not identity state.
 If it needed to survive a full page reload, you would persist it in
 `localStorage` yourself — but that is almost never the right call for a
 transient UI indicator.
+
+---
+
+### Error taxonomy
+
+Failures across the client arrive in four distinct shapes depending on where in the stack the failure originates. Knowing the error type determines where the error should be handled or translated into user-facing text:
+
+| Source | Error Type / Format | Example | Responsible Module |
+|---|---|---|---|
+| **Backend API** | `ApiError` class instance | `new ApiError(404, "NOT_FOUND", "Creator not found")` | `src/lib/api.ts` constructs `ApiError` from response payloads (`status`, `code`, `message`). UI components and pages inspect `err.status`/`err.code` or display `err.message`. |
+| **Contract (typed)** | `NovatipContractError` from `@novatip/sdk` | `NovatipContractError` with `code: ContractErrorCode.JarNotFound` | `@novatip/sdk` parses contract error codes from simulations. Feature modules such as `src/lib/jar.ts` inspect `err.code` or map contract codes to friendly messages. |
+| **Simulation (raw)** | Plain `Error` with simulation diagnostic string | `Error("HostError: Error(Contract, #3)")` | Soroban RPC / Stellar SDK produces raw diagnostic strings when simulation fails without a structured SDK contract error. Modules such as `src/lib/jar.ts` check `err.message` via pattern matching. |
+| **Transaction Submission** | Base64-encoded `TransactionResult` XDR | `Error("Transaction submission failed: AAAAAAAA+QT////6AAAAAA==")` | `src/lib/txerror.ts` (`describeSubmissionError`, `decodeResultCode`) decodes the base64 XDR using `@stellar/stellar-sdk` and translates result codes (e.g., `txBadAuth`, `txInsufficientBalance`, `txBadSeq`) into actionable human prose. |
+
+#### Detailed breakdown
+
+1. **Backend `ApiError` (`src/lib/api.ts`)**
+   - **When it occurs:** Thrown by `request()` in `src/lib/api.ts` whenever the REST backend returns a non-2xx HTTP status, as well as on network timeouts or aborted requests.
+   - **Shape:** `ApiError` instance with properties `status` (number), `code` (string), and `message` (string).
+   - **Example:** `throw new ApiError(404, "NOT_FOUND", "Creator not found");`
+   - **Handling:** UI components and route handlers (such as `src/app/[slug]/page.tsx`) catch `ApiError` and branch on `error.status` or `error.code` to show specific UI states (like 404 views) or display `error.message`.
+
+2. **Contract `NovatipContractError` (`@novatip/sdk`)**
+   - **When it occurs:** Thrown by `@novatip/sdk` methods when a Soroban contract call simulation fails with a known contract error code.
+   - **Shape:** An instance of `NovatipContractError` with a typed `code` property (`ContractErrorCode`).
+   - **Example:** `new NovatipContractError(ContractErrorCode.JarNotFound)`
+   - **Handling:** Catch blocks in feature modules (e.g. `src/lib/jar.ts`) check `err instanceof NovatipContractError` and test `err.code` against `ContractErrorCode` to handle known states (for example, treating `JarNotFound` as `null` during onboarding).
+
+3. **Raw Simulation String**
+   - **When it occurs:** Soroban RPC returns simulation diagnostic failures that the SDK could not parse into a typed `NovatipContractError` (e.g., host errors, budget exhaustion, or contract panics).
+   - **Shape:** A standard JavaScript `Error` whose `message` contains diagnostic strings like `"HostError: Error(Contract, #3)"`.
+   - **Example:** `new Error("Transaction simulation failed: HostError: Error(Contract, #3)")`
+   - **Handling:** Catch blocks perform regex or substring matching on `err.message` (e.g. `isJarNotFound` in `src/lib/jar.ts` tests `/Error\(Contract,\s*#3\)/`) to identify the failure when SDK error typing is unavailable.
+
+4. **Transaction Submission Failures (`src/lib/txerror.ts`)**
+   - **When it occurs:** The transaction was simulated successfully and signed by the wallet, but the Stellar network rejected it during submission.
+   - **Shape:** The SDK surfaces the error as a raw message ending in a base64-encoded `TransactionResult` XDR.
+   - **Example:** `Error: Transaction submission failed: AAAAAAAA+QT////6AAAAAA==`
+   - **Handling:** Wrap transaction submission promises with `describeSubmissionError()` from `src/lib/txerror.ts` (as in `src/lib/jar.ts`). `lib/txerror.ts` extracts the base64 XDR, decodes the union result code via `xdr.TransactionResult.fromXDR()`, and maps cryptic codes (such as `txBadAuth`, `txBadSeq`, `txInsufficientBalance`) to clear, actionable user messages (e.g. switching Freighter accounts or acquiring XLM).
 
 ## Accessibility
 
