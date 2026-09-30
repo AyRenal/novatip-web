@@ -48,6 +48,16 @@ npm test
 npm run build
 ```
 
+## Pull request checklist
+
+Before opening a pull request, check off each of the following:
+
+- [ ] **Lint, typecheck, and tests**: `npm run lint`, `npm run typecheck`, and `npm test` all pass cleanly.
+- [ ] **Test alongside bug fixes**: Every bug fix includes a test reproducing the problem and verifying the fix.
+- [ ] **Both themes**: UI changes have been checked in both light and dark themes.
+- [ ] **Narrow viewport**: UI changes have been verified on a narrow (mobile) viewport.
+- [ ] **Design tokens**: Styling uses design tokens rather than raw palette classes.
+
 ## Opening a pull request
 
 - One issue per pull request, opened against `main`
