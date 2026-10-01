@@ -25,7 +25,7 @@ export function PublicSupportersFeed({ tips }: PublicSupportersFeedProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Recent Supporters</CardTitle>
+        <CardTitle level={2}>Recent Supporters</CardTitle>
       </CardHeader>
 
       <ul className="space-y-3" aria-label="Recent supporters">

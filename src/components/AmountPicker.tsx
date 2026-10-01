@@ -13,21 +13,35 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
+import { formatUsdc, isValidTipAmount, usdcToStroops } from "@novatip/sdk";
 import { isValidTipAmount, usdcToStroops } from "@novatip/sdk";
 import { MAX_CUSTOM_TIP_USDC, isWithinTipCeiling } from "@/lib/tipAmount";
 
-const PRESETS = ["1", "2", "5", "10", "25"];
+/** Used when a creator hasn't configured their own preset amounts. */
+export const DEFAULT_AMOUNT_PRESETS = ["1", "2", "5", "10", "25"];
 
 interface AmountPickerProps {
   value:     string;
   onChange:  (value: string) => void;
   disabled?: boolean;
+  /** Preset amount buttons, in display order. Defaults to DEFAULT_AMOUNT_PRESETS. */
+  presets?:  string[];
 }
 
-export function AmountPicker({ value, onChange, disabled = false }: AmountPickerProps) {
+export function AmountPicker({
+  value,
+  onChange,
+  disabled = false,
+  presets = DEFAULT_AMOUNT_PRESETS,
+}: AmountPickerProps) {
+  /** The connected supporter's USDC balance, if known — null while unknown/loading. */
+  balance?:  bigint | null;
+}
+
+export function AmountPicker({ value, onChange, disabled = false, balance = null }: AmountPickerProps) {
   const [isCustom, setIsCustom] = useState(false);
 
-  const isPreset = PRESETS.includes(value);
+  const isPreset = presets.includes(value);
 
   function handlePreset(preset: string) {
     setIsCustom(false);
@@ -35,8 +49,14 @@ export function AmountPicker({ value, onChange, disabled = false }: AmountPicker
   }
 
   function handleCustomFocus() {
-    setIsCustom(true);
-    onChange("");
+    // Only clear the amount when the user is switching away from a preset.
+    // If they tab through the custom field (or re-focus it while it is
+    // already active) the existing value should be preserved so the tip
+    // button stays enabled and the amount summary does not disappear.
+    if (!isCustom) {
+      setIsCustom(true);
+      onChange("");
+    }
   }
 
   function handleCustomChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -68,13 +88,32 @@ export function AmountPicker({ value, onChange, disabled = false }: AmountPicker
   })();
   const exceedsCeiling = isCustom && !!value && Number(value) > MAX_CUSTOM_TIP_USDC;
 
+  const insufficientBalance = (() => {
+    if (balance === null || !amountValid) return false;
+    try {
+      return usdcToStroops(value) > balance;
+    } catch {
+      return false;
+    }
+  })();
+
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm font-medium text-fg-muted">Amount (USDC)</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-fg-muted">Amount (USDC)</p>
+        {balance !== null && (
+          <p className={cn("text-xs", insufficientBalance ? "text-danger" : "text-fg-faint")}>
+            Balance: ${formatUsdc(balance, 2)}
+          </p>
+        )}
+      </div>
 
       {/* Preset buttons */}
-      <div className="grid grid-cols-5 gap-2">
-        {PRESETS.map((preset) => (
+      <div
+        className="grid gap-2"
+        style={{ gridTemplateColumns: `repeat(${presets.length}, minmax(0, 1fr))` }}
+      >
+        {presets.map((preset) => (
           <button
             key={preset}
             type="button"
@@ -142,9 +181,14 @@ export function AmountPicker({ value, onChange, disabled = false }: AmountPicker
           USDC supports up to 7 decimal places.
         </p>
       )}
+      {amountValid && insufficientBalance && (
+        <p className="text-xs text-danger">
+          That&apos;s more than your USDC balance.
+        </p>
+      )}
 
       {/* Selected amount summary */}
-      {amountValid && (
+      {amountValid && !insufficientBalance && (
         <p className="text-xs text-fg-faint text-right">
           Sending{" "}
           <span className="text-accent font-semibold">${value} USDC</span>

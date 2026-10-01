@@ -11,6 +11,7 @@ import { useCallback, useEffect } from "react";
 import { analyticsApi } from "@/lib/api";
 import { tipEvents, type TipSuccessPayload } from "@/lib/tipEvents";
 import { useAbortableRequest } from "@/hooks/useAbortableRequest";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { formatUsdc, shortenAddress } from "@novatip/sdk";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
@@ -62,7 +63,7 @@ export function Leaderboard({ jwt, limit = 10, slug }: LeaderboardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Top Supporters</CardTitle>
+        <CardTitle level={2}>Top Supporters</CardTitle>
       </CardHeader>
 
       {loading && (
@@ -100,7 +101,9 @@ export function Leaderboard({ jwt, limit = 10, slug }: LeaderboardProps) {
             >
               {/* Rank */}
               <span className="w-6 text-center text-sm" aria-label={`Rank ${i + 1}`}>
-                {MEDALS[i] ?? <span className="text-fg-dim font-mono text-xs">{i + 1}</span>}
+                <span aria-hidden="true">
+                  {MEDALS[i] ?? <span className="text-fg-dim font-mono text-xs">{i + 1}</span>}
+                </span>
               </span>
 
               {/* Address */}
@@ -118,9 +121,65 @@ export function Leaderboard({ jwt, limit = 10, slug }: LeaderboardProps) {
                 ${formatUsdc(BigInt(s.totalAmountRaw), 2)}
               </span>
             </li>
+            <SupporterRow key={s.fromAddress} supporter={s} rank={i} />
           ))}
         </ol>
       )}
     </Card>
+  );
+}
+
+// ── Row ───────────────────────────────────────────────────────────────────────
+
+function SupporterRow({ supporter, rank }: { supporter: Supporter; rank: number }) {
+  const { copied, failed, copy } = useCopyToClipboard();
+
+  return (
+    <li
+      className={cn(
+        "flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors",
+        rank === 0 ? "bg-warning/10 border border-warning/20" : "hover:bg-surface-strong",
+      )}
+    >
+      {/* Rank */}
+      <span className="w-6 text-center text-sm" aria-label={`Rank ${rank + 1}`}>
+        {MEDALS[rank] ?? <span className="text-fg-dim font-mono text-xs">{rank + 1}</span>}
+      </span>
+
+      {/* Address + copy control */}
+      <span className="flex-1 min-w-0 flex items-center gap-1.5">
+        <span className="font-mono text-sm text-fg-muted truncate">
+          {shortenAddress(supporter.fromAddress)}
+        </span>
+        <button
+          type="button"
+          onClick={() => void copy(supporter.fromAddress)}
+          className={cn(
+            "shrink-0 rounded-md p-1 text-xs transition-colors",
+            "hover:bg-hairline focus:outline-none focus:ring-2 focus:ring-brand-500/50",
+            failed ? "text-danger" : copied ? "text-success" : "text-fg-faint hover:text-fg",
+          )}
+          aria-label={
+            copied
+              ? "Full address copied"
+              : failed
+              ? "Couldn't copy address — try again"
+              : `Copy full address ${supporter.fromAddress}`
+          }
+        >
+          {copied ? "✓" : failed ? "✕" : "📋"}
+        </button>
+      </span>
+
+      {/* Tip count */}
+      <span className="text-xs text-fg-faint hidden sm:block">
+        {supporter.tipCount} tip{supporter.tipCount !== 1 ? "s" : ""}
+      </span>
+
+      {/* Amount */}
+      <span className="text-sm font-semibold text-accent shrink-0">
+        ${formatUsdc(BigInt(supporter.totalAmountRaw), 2)}
+      </span>
+    </li>
   );
 }

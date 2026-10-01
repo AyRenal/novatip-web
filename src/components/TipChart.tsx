@@ -272,7 +272,7 @@ export function TipChart({ jwt }: TipChartProps) {
     >
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle>Tip activity</CardTitle>
+          <CardTitle level={2}>Tip activity</CardTitle>
 
           {/* Controls */}
           <div className="flex items-center gap-2 flex-wrap">

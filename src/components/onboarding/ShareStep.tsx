@@ -8,14 +8,14 @@
 import Link from "next/link";
 import { QRDownload } from "@/components/QRDownload";
 import { Button } from "@/components/ui/Button";
-import { config } from "@/lib/config";
+import { getQrPngUrl } from "@/lib/tipUrl";
 
 interface ShareStepProps {
   slug: string;
 }
 
 export function ShareStep({ slug }: ShareStepProps) {
-  const pngUrl = `${config.apiUrl}/qr/${slug}/png`;
+  const pngUrl = getQrPngUrl(slug);
 
   return (
     <div className="flex flex-col items-center gap-6">
