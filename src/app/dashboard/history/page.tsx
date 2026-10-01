@@ -106,16 +106,16 @@ export default function HistoryPage() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Tip History</h1>
-        <p className="text-sm text-gray-400 mt-1">
+        <h1 className="text-2xl font-bold text-fg">Tip History</h1>
+        <p className="text-sm text-fg-subtle mt-1">
           All tips received, newest first
         </p>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3">
-          <p className="text-sm text-red-400">{error}</p>
+        <div className="rounded-xl bg-danger/10 border border-danger/20 px-4 py-3">
+          <p className="text-sm text-danger">{error}</p>
         </div>
       )}
 
@@ -192,7 +192,7 @@ export default function HistoryPage() {
 
         {hasMore && tips.length > 0 && (
           <div className="pt-4 flex flex-col items-center gap-2">
-            {pageError && <p className="text-xs text-red-400">{pageError}</p>}
+            {pageError && <p className="text-xs text-danger">{pageError}</p>}
             <Button
               variant="ghost"
               size="sm"
