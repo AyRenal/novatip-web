@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "@/contexts/WalletContext";
+import { SkipLink } from "@/components/SkipLink";
 import { config } from "@/lib/config";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
@@ -29,6 +30,22 @@ export const metadata: Metadata = {
     title:       "Novatip",
     description: "Tap-to-tip any creator in 2 seconds, cross-border.",
     type:        "website",
+  },
+  icons: {
+    /*
+      icon.svg   — picked up automatically by Next.js as the app icon
+      favicon.svg in public/ — referenced explicitly so browsers that support
+                               SVG favicons (Firefox, Chrome 80+) use the
+                               media-query-aware version that adapts to dark
+                               browser chrome.
+      apple-icon.svg — served by Next.js at /apple-icon.svg for iOS home screen.
+    */
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/apple-icon.svg", type: "image/svg+xml" },
+    ],
   },
 };
 
@@ -60,6 +77,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
+        <SkipLink />
         <WalletProvider>
           {children}
         </WalletProvider>

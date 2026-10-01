@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useId } from "react";
 import type { InputHTMLAttributes } from "react";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -8,7 +9,11 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function Input({ label, error, hint, className, id, ...props }: InputProps) {
-  const inputId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
+  const hintId = `${inputId}-hint`;
+  const errorId = `${inputId}-error`;
+  const describedBy = error ? errorId : hint ? hintId : undefined;
 
   return (
     <div className="flex flex-col gap-1.5 w-full">
@@ -19,6 +24,8 @@ export function Input({ label, error, hint, className, id, ...props }: InputProp
       )}
       <input
         id={inputId}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
         className={cn(
           "w-full rounded-xl bg-surface-strong border border-hairline px-4 py-2.5",
           "text-fg placeholder:text-fg-dim text-sm",
@@ -29,8 +36,16 @@ export function Input({ label, error, hint, className, id, ...props }: InputProp
         )}
         {...props}
       />
-      {hint && !error && <p className="text-xs text-fg-faint">{hint}</p>}
-      {error && <p className="text-xs text-danger">{error}</p>}
+      {hint && !error && (
+        <p id={hintId} className="text-xs text-fg-faint">
+          {hint}
+        </p>
+      )}
+      {error && (
+        <p id={errorId} className="text-xs text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

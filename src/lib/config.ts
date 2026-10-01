@@ -10,7 +10,20 @@
  * Variables are split into two groups:
  *   requirePublic — must be present and non-empty; throws at build/boot if not
  *   optionalPublic — safe to omit; falls back to a documented default
+ *
+ * IMPORTANT — NEXT_PUBLIC_ variables must be read as literal member accesses:
+ *   process.env.NEXT_PUBLIC_FOO          ✓ inlined at build time
+ *   process.env[key]                     ✗ always undefined in the browser
+ *   process.env[`NEXT_PUBLIC_${name}`]   ✗ always undefined in the browser
+ *
+ * Next.js substitutes these values by matching the exact literal text in the
+ * source. A computed lookup is never replaced and comes back undefined in the
+ * browser while continuing to work in `npm run dev` (where Node reads the real
+ * process.env). See the "How NEXT_PUBLIC_ variables are read" section in the
+ * README before refactoring this file.
  */
+
+import { StrKey } from "@stellar/stellar-sdk";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -39,18 +52,18 @@ function optionalPublic(val: string | undefined, fallback: string): string {
 
 /**
  * Validate that `value` looks like a Stellar/Soroban contract ID:
- * a 56-character base-32 string beginning with "C".
+ * a 56-character base-32 strkey beginning with "C" with a valid checksum.
  *
  * Throws at build/boot so a mis-configured contract ID surfaces immediately
  * rather than at the moment a supporter presses the Tip button.
  */
 function requireContractId(key: string, raw: string | undefined): string {
   const val = requirePublic(key, raw);
-  if (!/^C[A-Z2-7]{55}$/.test(val)) {
+  if (!StrKey.isValidContract(val)) {
     throw new Error(
       `Invalid value for ${key}: ${JSON.stringify(val)}\n` +
       `Expected a 56-character Soroban contract ID starting with "C" ` +
-      `(e.g. CAAAA…AAAA).`,
+      `(e.g. CAAAA…BSC4).`,
     );
   }
   return val;
@@ -103,6 +116,20 @@ export function resolveSiteUrl(raw: string | undefined): string {
 
   return url.href;
 }
+
+// ── API request timeout ───────────────────────────────────────────────────────
+
+/**
+ * Default timeout for a backend API request, in milliseconds.
+ *
+ * The novatip-backend runs on a free tier that sleeps when idle, so a cold
+ * start regularly takes several seconds longer than a warm request. Ten
+ * seconds gives that cold start room to finish without leaving a genuinely
+ * stuck request hanging too long. Callers that know a particular request is
+ * slower or faster still than this can pass their own `timeout` in
+ * RequestOptions.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 // ── Config object ─────────────────────────────────────────────────────────────
 

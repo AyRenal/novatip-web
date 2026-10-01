@@ -8,15 +8,16 @@
  * sender address, amount, message, and ledger timestamp.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { analyticsApi } from "@/lib/api";
+import { analyticsApi, RECENT_TIPS_MAX_LIMIT } from "@/lib/api";
 import { formatUsdc } from "@novatip/sdk";
 import { shortenAddress } from "@novatip/sdk";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
+import { timeAgo } from "@/lib/time";
 
 interface Tip {
   id:          string;
@@ -26,60 +27,99 @@ interface Tip {
   ledgerAt:    string;
 }
 
-const PAGE_SIZE = 20;
-
-function timeAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60)   return `${diff}s ago`;
-  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day:   "numeric",
-    year:  "numeric",
-  });
-}
+// Every request asks for one page, never the running total, so it stays
+// within the backend's cap however far back the creator scrolls.
+const PAGE_SIZE = Math.min(20, RECENT_TIPS_MAX_LIMIT);
 
 export default function HistoryPage() {
   const { jwt }  = useWallet();
   const [tips,    setTips]    = useState<Tip[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
-  const [limit,   setLimit]   = useState(PAGE_SIZE);
   const [hasMore, setHasMore] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
+  // True only while a *later* page is in flight, so the button can say so
+  // without the initial page load also flipping its label.
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Announced politely after a page lands. Focus stays on the button, so this
+  // is the only signal a screen reader user gets that rows were appended.
+  const [announcement, setAnnouncement] = useState("");
 
-  const fetchTips = useCallback((currentLimit: number) => {
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Each call fetches one page starting after the rows already shown and
+  // appends it, so a load more costs one page rather than the whole history,
+  // and existing rows are never replaced.
+  const fetchPage = useCallback((offset: number) => {
     if (!jwt) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
+    if (offset > 0) setLoadingMore(true);
     analyticsApi
-      .recent(jwt, currentLimit)
+      .recent(jwt, PAGE_SIZE, { signal: controller.signal }, offset)
       .then((r) => {
-        // Append only new items — avoids re-downloading every page and
-        // preserves scroll position.
+        // A tip indexed between pages shifts the offset by one, which would
+        // repeat the last row of the previous page — skip ids already shown.
+        let added = 0;
         setTips((prev) => {
-          const newItems = r.tips.slice(prev.length);
-          return [...prev, ...newItems];
+          const seen = new Set(prev.map((t) => t.id));
+          const fresh = r.tips.filter((t) => !seen.has(t.id));
+          added = fresh.length;
+          return [...prev, ...fresh];
         });
-        setHasMore(r.tips.length === currentLimit);
+        setHasMore(r.tips.length === PAGE_SIZE);
         setError(null);
+        setPageError(null);
+        // Only announce for appended pages; the first page is already
+        // conveyed by the page itself loading.
+        if (offset > 0) {
+          setAnnouncement(
+            added === 1
+              ? "1 more tip loaded."
+              : `${added} more tips loaded.`,
+          );
+        }
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e: Error) => {
+        // Ignore aborted requests — component is unmounted or jwt changed.
+        if ((e as any).code === "ABORTED") return;
+        // A failed later page must not replace the rows already shown with
+        // a page-level error — report it beside the button so it can retry.
+        if (offset === 0) setError(e.message);
+        else setPageError("Couldn't load more tips. Try again.");
+      })
+      .finally(() => {
+        setLoading(false);
+        setLoadingMore(false);
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+          setLoading(false);
+        }
+      });
   }, [jwt]);
 
   useEffect(() => {
-    fetchTips(limit);
-  }, [fetchTips, limit]);
+    setTips([]);
+    setHasMore(true);
+    setPageError(null);
+    fetchPage(0);
 
-  // Backend caps limit at 100 — cap on the client side so we never send
-  // an invalid request. Disable the button once we hit the cap.
-  const BACKEND_MAX = 100;
-  const atLimit = limit >= BACKEND_MAX;
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [fetchPage]);
 
   function loadMore() {
-    if (atLimit) return;
-    const next = Math.min(limit + PAGE_SIZE, BACKEND_MAX);
-    setLimit(next);
+    if (loading) return;
+    fetchPage(tips.length);
   }
 
   return (
@@ -87,97 +127,118 @@ export default function HistoryPage() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Tip History</h1>
-        <p className="text-sm text-gray-400 mt-1">
+        <h1 className="text-2xl font-bold text-fg">Tip History</h1>
+        <p className="text-sm text-fg-subtle mt-1">
           All tips received, newest first
         </p>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3">
-          <p className="text-sm text-red-400">{error}</p>
+        <div className="rounded-xl bg-danger/10 border border-danger/20 px-4 py-3">
+          <p className="text-sm text-danger">{error}</p>
         </div>
       )}
 
       {/* Table */}
       <Card glass={false}>
-        {/* Column headers */}
-        <div className="grid grid-cols-12 gap-4 pb-3 border-b border-white/10 text-xs text-gray-500 uppercase tracking-wider">
-          <span className="col-span-4">From</span>
-          <span className="col-span-2 text-right">Amount</span>
-          <span className="col-span-4">Message</span>
-          <span className="col-span-2 text-right">When</span>
+        <div role="table" aria-label="Tip history" className="w-full">
+          {/* Column headers */}
+          <div role="rowgroup">
+            <div role="row" className="grid grid-cols-12 gap-4 pb-3 border-b border-white/10 text-xs text-gray-500 uppercase tracking-wider">
+              <span role="columnheader" className="col-span-4">From</span>
+              <span role="columnheader" className="col-span-2 text-right">Amount</span>
+              <span role="columnheader" className="col-span-4">Message</span>
+              <span role="columnheader" className="col-span-2 text-right">When</span>
+            </div>
+          </div>
+
+          {/* Loading skeletons */}
+          {loading && tips.length === 0 && (
+            <div role="rowgroup" className="divide-y divide-white/5">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} role="row" className="grid grid-cols-12 gap-4 py-3 animate-pulse">
+                  <div role="cell" className="col-span-4 h-4 rounded bg-white/10" />
+                  <div role="cell" className="col-span-2 h-4 rounded bg-white/10" />
+                  <div role="cell" className="col-span-4 h-4 rounded bg-white/5" />
+                  <div role="cell" className="col-span-2 h-4 rounded bg-white/10" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!loading && tips.length === 0 && !error && (
+            <p className="text-sm text-gray-500 py-8 text-center">
+              No tips received yet. Share your link to get started!
+            </p>
+          )}
+
+          {/* Tip rows */}
+          {tips.length > 0 && (
+            <div role="rowgroup" className="divide-y divide-white/5">
+              {tips.map((tip) => (
+                <div
+                  key={tip.id}
+                  role="row"
+                  className="grid grid-cols-12 gap-4 py-3 hover:bg-white/3 transition-colors rounded-lg"
+                >
+                  {/* Sender */}
+                  <span role="cell" className="col-span-4 font-mono text-sm text-gray-300 truncate">
+                    {shortenAddress(tip.fromAddress)}
+                  </span>
+
+                  {/* Amount */}
+                  <span role="cell" className="col-span-2 text-right text-sm font-semibold text-brand-400">
+                    ${formatUsdc(BigInt(tip.amount), 2)}
+                  </span>
+
+                  {/* Message */}
+                  <span role="cell" className={cn(
+                    "col-span-4 text-sm truncate",
+                    tip.message ? "text-gray-300" : "text-gray-600 italic",
+                  )}>
+                    {tip.message || "No message"}
+                  </span>
+
+                  {/* Time */}
+                  <span role="cell" className="col-span-2 text-right text-xs text-gray-500">
+                    {timeAgo(tip.ledgerAt)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Loading skeletons */}
-        {loading && tips.length === 0 && (
-          <div className="divide-y divide-white/5">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="grid grid-cols-12 gap-4 py-3 animate-pulse">
-                <div className="col-span-4 h-4 rounded bg-white/10" />
-                <div className="col-span-2 h-4 rounded bg-white/10" />
-                <div className="col-span-4 h-4 rounded bg-white/5" />
-                <div className="col-span-2 h-4 rounded bg-white/10" />
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Polite status region: focus stays on the button, so this is how the
+            newly appended row count reaches a screen reader. Kept mounted
+            unconditionally so the final page's announcement is not lost when
+            the button disappears. */}
+        <div aria-live="polite" role="status" className="sr-only">
+          {announcement}
+        </div>
 
-        {/* Empty state */}
-        {!loading && tips.length === 0 && !error && (
-          <p className="text-sm text-gray-500 py-8 text-center">
-            No tips received yet. Share your link to get started!
-          </p>
-        )}
-
-        {/* Tip rows */}
-        {tips.length > 0 && (
-          <div className="divide-y divide-white/5">
-            {tips.map((tip) => (
-              <div
-                key={tip.id}
-                className="grid grid-cols-12 gap-4 py-3 hover:bg-white/3 transition-colors rounded-lg"
-              >
-                {/* Sender */}
-                <span className="col-span-4 font-mono text-sm text-gray-300 truncate">
-                  {shortenAddress(tip.fromAddress)}
-                </span>
-
-                {/* Amount */}
-                <span className="col-span-2 text-right text-sm font-semibold text-brand-400">
-                  ${formatUsdc(BigInt(tip.amount), 2)}
-                </span>
-
-                {/* Message */}
-                <span className={cn(
-                  "col-span-4 text-sm truncate",
-                  tip.message ? "text-gray-300" : "text-gray-600 italic",
-                )}>
-                  {tip.message || "No message"}
-                </span>
-
-                {/* Time */}
-                <span className="col-span-2 text-right text-xs text-gray-500">
-                  {timeAgo(tip.ledgerAt)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* {atLimit ? "Showing all tips (100 max)" : "Load more"} */}
         {hasMore && tips.length > 0 && (
-          <div className="pt-4 flex justify-center">
+          <div className="pt-4 flex flex-col items-center gap-2">
+            {pageError && <p className="text-xs text-danger">{pageError}</p>}
             <Button
               variant="ghost"
               size="sm"
-              loading={loading}
-              onClick={loadMore} disabled={atLimit}
+              loading={loadingMore}
+              onClick={loadMore}
             >
-              Load more
+              {pageError ? "Retry" : loadingMore ? "Loading more…" : "Load more"}
             </Button>
           </div>
+        )}
+
+        {!hasMore && tips.length > 0 && (
+          <p className="pt-4 text-center text-xs text-gray-500">
+            {tips.length >= RECENT_TIPS_MAX_LIMIT
+              ? `Showing all tips (${RECENT_TIPS_MAX_LIMIT} max)`
+              : "That\u2019s all your tips."}
+          </p>
         )}
       </Card>
 

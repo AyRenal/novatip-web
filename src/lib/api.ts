@@ -5,7 +5,7 @@
  * All methods throw ApiError on non-2xx responses.
  */
 
-import { config } from "./config";
+import { config, DEFAULT_REQUEST_TIMEOUT_MS } from "./config";
 import { emitUnauthorized } from "./authEvents";
 
 export interface RequestOptions extends Omit<RequestInit, "signal"> {
@@ -49,17 +49,22 @@ async function request<T>(
 
   if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
 
-  const timeoutMs = init.timeout ?? 10000;
+  const timeoutMs = init.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const callerSignal = init.signal;
 
   let signal: AbortSignal;
+  let cleanup: (() => void) | undefined;
   if (callerSignal) {
     if (typeof AbortSignal.any === "function") {
       signal = AbortSignal.any([callerSignal, timeoutSignal]);
     } else {
       const controller = new AbortController();
       const onAbort = () => controller.abort();
+      cleanup = () => {
+        callerSignal.removeEventListener("abort", onAbort);
+        timeoutSignal.removeEventListener("abort", onAbort);
+      };
       if (callerSignal.aborted) {
         controller.abort(callerSignal.reason);
       } else {
@@ -83,7 +88,9 @@ async function request<T>(
       headers,
       signal,
     });
+    cleanup?.();
   } catch (err: any) {
+    cleanup?.();
     const isAbort =
       err.name === "AbortError" ||
       err.name === "TimeoutError" ||
@@ -219,11 +226,20 @@ export const creatorApi = {
 
 // ── Resolver ──────────────────────────────────────────────────────────────────
 
+export interface PublicTip {
+  id:          string;
+  fromAddress: string;
+  amount:      string;
+  message:     string;
+  ledgerAt:    string;
+}
+
 export interface ResolvedPage {
-  creator:   CreatorProfile;
-  tipUrl:    string;
-  qrSvgUrl:  string;
-  qrPngUrl:  string;
+  creator:    CreatorProfile;
+  tipUrl:     string;
+  qrSvgUrl:   string;
+  qrPngUrl:   string;
+  recentTips: PublicTip[];
 }
 
 export const resolverApi = {
@@ -232,6 +248,9 @@ export const resolverApi = {
 };
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
+
+/** The largest `limit` the backend accepts on /analytics/recent. */
+export const RECENT_TIPS_MAX_LIMIT = 100;
 
 export const analyticsApi = {
   totals: (jwt: string, options?: RequestOptions) =>
@@ -255,7 +274,7 @@ export const analyticsApi = {
       jwt,
     ),
 
-  recent: (jwt: string, limit = 20, options?: RequestOptions) =>
+  recent: (jwt: string, limit = 20, options?: RequestOptions, offset = 0) =>
     request<{
       tips: Array<{
         id: string;
@@ -264,7 +283,41 @@ export const analyticsApi = {
         message: string;
         ledgerAt: string;
       }>;
-    }>(`/analytics/recent?limit=${limit}`, options, jwt),
+    }>(
+      // Clamped here so no caller can send a limit the backend rejects.
+      `/analytics/recent?limit=${Math.min(Math.max(limit, 1), RECENT_TIPS_MAX_LIMIT)}&offset=${Math.max(offset, 0)}`,
+      options,
+      jwt,
+    ),
+};
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export interface NotificationPreferences {
+  /** Receive an email after each indexed tip. */
+  emailEnabled:   boolean;
+  /** Receive a webhook POST after each indexed tip. */
+  webhookEnabled: boolean;
+}
+
+export const notificationsApi = {
+  getPreferences: (jwt: string, options?: RequestOptions) =>
+    request<{ preferences: NotificationPreferences }>(
+      "/notifications/preferences",
+      options,
+      jwt,
+    ),
+
+  updatePreferences: (
+    jwt: string,
+    prefs: Partial<NotificationPreferences>,
+    options?: RequestOptions,
+  ) =>
+    request<{ preferences: NotificationPreferences }>(
+      "/notifications/preferences",
+      { ...options, method: "PATCH", body: JSON.stringify(prefs) },
+      jwt,
+    ),
 };
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────

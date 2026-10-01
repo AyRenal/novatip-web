@@ -23,9 +23,9 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { SplitsManager } from "./SplitsManager";
 
-// A valid Stellar G-address (56 chars: G + 55 A-Z2-7)
+// Valid Stellar G-addresses (correct version byte and CRC16 checksum)
 const VALID_ADDR_1 = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
-const VALID_ADDR_2 = "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBVNFKR";
+const VALID_ADDR_2 = "GAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBBKGO";
 
 const SOLO_SPLIT = [{ to: VALID_ADDR_1, bps: 10_000 }];
 
@@ -150,6 +150,44 @@ describe("SplitsManager – save", () => {
     expect(screen.getByRole("button", { name: /save collaborator splits/i })).toBeDisabled();
   });
 
+  it("rejects a well-formed address with a corrupted checksum", () => {
+    // Same shape as VALID_ADDR_1 (G + 55 base-32 chars) but the last char is
+    // flipped, so only the CRC16 check can catch it.
+    setup([{ to: VALID_ADDR_1.slice(0, -1) + "G", bps: 10_000 }]);
+    expect(screen.getByText(/invalid stellar address/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save collaborator splits/i })).toBeDisabled();
+  });
+
+  it("flags duplicate recipients and disables Save", () => {
+    setup([
+      { to: VALID_ADDR_1, bps: 5_000 },
+      { to: VALID_ADDR_1, bps: 5_000 },
+    ]);
+    expect(screen.getAllByText(/duplicate recipient/i)).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /save collaborator splits/i })).toBeDisabled();
+  });
+
+  it("detects duplicates regardless of surrounding whitespace or case", () => {
+    setup([
+      { to: VALID_ADDR_1, bps: 5_000 },
+      { to: `  ${VALID_ADDR_1.toLowerCase()} `, bps: 5_000 },
+    ]);
+    const second = screen.getByLabelText(/recipient 2 address/i);
+    expect(second).toHaveValue(`  ${VALID_ADDR_1.toLowerCase()} `);
+    // Row 1 is valid, so its only complaint can be the duplicate.
+    expect(screen.getAllByText(/duplicate recipient/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("button", { name: /save collaborator splits/i })).toBeDisabled();
+  });
+
+  it("does not flag distinct recipients as duplicates", () => {
+    setup([
+      { to: VALID_ADDR_1, bps: 5_000 },
+      { to: VALID_ADDR_2, bps: 5_000 },
+    ]);
+    expect(screen.queryByText(/duplicate recipient/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save collaborator splits/i })).toBeEnabled();
+  });
+
   it("enables Save when bps is 10 000 and all addresses are valid", () => {
     setup();
     expect(screen.getByRole("button", { name: /save collaborator splits/i })).toBeEnabled();
@@ -178,6 +216,22 @@ describe("SplitsManager – save", () => {
     await waitFor(() => {
       expect(screen.getByText(/network timeout/i)).toBeInTheDocument();
     });
+  });
+});
+
+// ── Recipient cap ─────────────────────────────────────────────────────────────
+
+describe("SplitsManager – recipient cap (MAX_RECIPIENTS = 20)", () => {
+  it("hides the add button when 20 rows are present", () => {
+    const rows = Array.from({ length: 20 }, () => ({ to: VALID_ADDR_1, bps: 500 }));
+    setup(rows);
+    expect(screen.queryByRole("button", { name: /add collaborator/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the add button when 19 rows are present", () => {
+    const rows = Array.from({ length: 19 }, () => ({ to: VALID_ADDR_1, bps: 500 }));
+    setup(rows);
+    expect(screen.getByRole("button", { name: /add collaborator/i })).toBeInTheDocument();
   });
 });
 

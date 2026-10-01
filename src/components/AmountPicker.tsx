@@ -14,6 +14,8 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { formatUsdc, isValidTipAmount, usdcToStroops } from "@novatip/sdk";
+import { isValidTipAmount, usdcToStroops } from "@novatip/sdk";
+import { MAX_CUSTOM_TIP_USDC, isWithinTipCeiling } from "@/lib/tipAmount";
 
 const PRESETS = ["1", "2", "5", "10", "25"];
 
@@ -36,8 +38,14 @@ export function AmountPicker({ value, onChange, disabled = false, balance = null
   }
 
   function handleCustomFocus() {
-    setIsCustom(true);
-    onChange("");
+    // Only clear the amount when the user is switching away from a preset.
+    // If they tab through the custom field (or re-focus it while it is
+    // already active) the existing value should be preserved so the tip
+    // button stays enabled and the amount summary does not disappear.
+    if (!isCustom) {
+      setIsCustom(true);
+      onChange("");
+    }
   }
 
   function handleCustomChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -57,15 +65,17 @@ export function AmountPicker({ value, onChange, disabled = false, balance = null
     onChange(clean);
   }
 
-  // Validate amount using SDK helper
+  // Validate amount using the SDK helper, plus our own ceiling — the SDK
+  // alone has no upper bound, and this is the one path a typo reaches.
   const amountValid = (() => {
     if (!value) return false;
     try {
-      return isValidTipAmount(usdcToStroops(value));
+      return isValidTipAmount(usdcToStroops(value)) && isWithinTipCeiling(value);
     } catch {
       return false;
     }
   })();
+  const exceedsCeiling = isCustom && !!value && Number(value) > MAX_CUSTOM_TIP_USDC;
 
   const insufficientBalance = (() => {
     if (balance === null || !amountValid) return false;
@@ -144,7 +154,17 @@ export function AmountPicker({ value, onChange, disabled = false, balance = null
       {/* Validation feedback */}
       {isCustom && value && !amountValid && (
         <p className="text-xs text-danger">
-          Enter a valid amount greater than 0
+          {exceedsCeiling
+            ? `Custom tips are capped at $${MAX_CUSTOM_TIP_USDC}`
+            : "Enter a valid amount greater than 0"}
+        </p>
+      )}
+
+      {/* Precision hint — shown whenever the custom field is active so the
+          user understands why extra decimal digits are dropped automatically */}
+      {isCustom && (
+        <p className="text-xs text-fg-dim">
+          USDC supports up to 7 decimal places.
         </p>
       )}
       {amountValid && insufficientBalance && (

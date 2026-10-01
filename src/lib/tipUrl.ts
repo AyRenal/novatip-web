@@ -5,9 +5,16 @@
  * onboarding preview, share step, and QR download can't drift apart again.
  */
 
+import { config } from "./config";
+
 export function getTipUrl(slug: string): string {
   const origin = typeof window !== "undefined"
     ? window.location.origin
-    : "https://novatip.xyz";
-  return `${origin}/${slug}`;
+    : config.siteUrl.replace(/\/$/, "");
+  return `${origin}/${encodeURIComponent(slug)}`;
+}
+
+export function getQrPngUrl(slug: string): string {
+  const baseUrl = config.apiUrl.replace(/\/+$/, "");
+  return `${baseUrl}/qr/${encodeURIComponent(slug)}/png`;
 }
