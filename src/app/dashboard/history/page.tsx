@@ -38,6 +38,12 @@ export default function HistoryPage() {
   const [error,   setError]   = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
+  // True only while a *later* page is in flight, so the button can say so
+  // without the initial page load also flipping its label.
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Announced politely after a page lands. Focus stays on the button, so this
+  // is the only signal a screen reader user gets that rows were appended.
+  const [announcement, setAnnouncement] = useState("");
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -54,18 +60,31 @@ export default function HistoryPage() {
     abortControllerRef.current = controller;
 
     setLoading(true);
+    if (offset > 0) setLoadingMore(true);
     analyticsApi
       .recent(jwt, PAGE_SIZE, { signal: controller.signal }, offset)
       .then((r) => {
         // A tip indexed between pages shifts the offset by one, which would
         // repeat the last row of the previous page — skip ids already shown.
+        let added = 0;
         setTips((prev) => {
           const seen = new Set(prev.map((t) => t.id));
-          return [...prev, ...r.tips.filter((t) => !seen.has(t.id))];
+          const fresh = r.tips.filter((t) => !seen.has(t.id));
+          added = fresh.length;
+          return [...prev, ...fresh];
         });
         setHasMore(r.tips.length === PAGE_SIZE);
         setError(null);
         setPageError(null);
+        // Only announce for appended pages; the first page is already
+        // conveyed by the page itself loading.
+        if (offset > 0) {
+          setAnnouncement(
+            added === 1
+              ? "1 more tip loaded."
+              : `${added} more tips loaded.`,
+          );
+        }
       })
       .catch((e: Error) => {
         // Ignore aborted requests — component is unmounted or jwt changed.
@@ -76,6 +95,8 @@ export default function HistoryPage() {
         else setPageError("Couldn't load more tips. Try again.");
       })
       .finally(() => {
+        setLoading(false);
+        setLoadingMore(false);
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null;
           setLoading(false);
@@ -190,16 +211,24 @@ export default function HistoryPage() {
           )}
         </div>
 
+        {/* Polite status region: focus stays on the button, so this is how the
+            newly appended row count reaches a screen reader. Kept mounted
+            unconditionally so the final page's announcement is not lost when
+            the button disappears. */}
+        <div aria-live="polite" role="status" className="sr-only">
+          {announcement}
+        </div>
+
         {hasMore && tips.length > 0 && (
           <div className="pt-4 flex flex-col items-center gap-2">
             {pageError && <p className="text-xs text-danger">{pageError}</p>}
             <Button
               variant="ghost"
               size="sm"
-              loading={loading}
+              loading={loadingMore}
               onClick={loadMore}
             >
-              {pageError ? "Retry" : "Load more"}
+              {pageError ? "Retry" : loadingMore ? "Loading more…" : "Load more"}
             </Button>
           </div>
         )}
