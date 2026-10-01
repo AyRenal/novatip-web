@@ -36,7 +36,7 @@ export function StepIndicator({ currentStep, totalSteps, labels }: StepIndicator
                 {state === "done" ? "✓" : i + 1}
               </div>
               <span className={cn(
-                "text-xs hidden sm:block",
+                "text-xs sr-only sm:not-sr-only",
                 state === "active" ? "text-accent font-medium" : "text-fg-dim",
               )}>
                 {labels[i]}

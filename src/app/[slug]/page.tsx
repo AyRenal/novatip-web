@@ -6,6 +6,7 @@
  * client-side TipForm for wallet interaction.
  */
 
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import type { Metadata } from "next";
@@ -14,7 +15,9 @@ import { Header } from "@/components/Header";
 import { TipForm } from "@/components/TipForm";
 import { Badge } from "@/components/ui/Badge";
 import { QRDownload } from "@/components/QRDownload";
+import { SplitBreakdown } from "@/components/SplitBreakdown";
 import { PublicSupportersFeed } from "@/components/PublicSupportersFeed";
+import { Avatar } from "@/components/Avatar";
 
 interface Props {
   // Next 15 resolves route params asynchronously, so this is a Promise.
@@ -32,28 +35,19 @@ function isUnclaimedSlug(error: unknown): boolean {
 }
 
 /**
- * Resolve the creator, or hand control to the right boundary.
- *
- * Only a 404 from the resolver means the slug is unclaimed.  Every other
- * failure — a 500, a timeout, the backend being unreachable — is our fault,
- * and rendering "no tip jar here" for those would tell a visitor a creator
- * does not exist when they do, sending them away for good over a blip.  Those
- * are rethrown so app/error.tsx offers a retry instead.
+ * Resolve the creator once per request via React's cache().
+ * Both generateMetadata and TipPage call this function, but resolverApi.resolve
+ * is only executed once per request pass.
  */
-async function resolveCreator(slug: string): Promise<ResolvedPage> {
-  try {
-    return await resolverApi.resolve(slug);
-  } catch (error) {
-    if (isUnclaimedSlug(error)) notFound();
-    throw error;
-  }
-}
+const resolveCreator = cache(async (slug: string): Promise<ResolvedPage> => {
+  return await resolverApi.resolve(slug);
+});
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const slug = normalizeSlug((await params).slug);
 
   try {
-    const { creator, tipUrl } = await resolverApi.resolve(slug);
+    const { creator, tipUrl } = await resolveCreator(slug);
     const title       = `Tip ${creator.displayName ?? `@${slug}`} on Novatip`;
     const description = creator.bio ?? `Send USDC tips to @${slug} in seconds on Stellar.`;
 
@@ -96,44 +90,56 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function TipPage({ params }: Props) {
   const slug = normalizeSlug((await params).slug);
 
-  const { creator, qrPngUrl, recentTips } = await resolveCreator(slug);
+  let data: ResolvedPage;
+  try {
+    data = await resolveCreator(slug);
+  } catch (error) {
+    if (isUnclaimedSlug(error)) notFound();
+    throw error;
+  }
+
+  const { creator, qrPngUrl, recentTips } = data;
   const displayName = creator.displayName ?? `@${slug}`;
-  const avatarUrl   =
-    creator.avatarUrl ??
-    `https://api.dicebear.com/8.x/identicon/svg?seed=${slug}`;
 
   return (
     <>
       <Header />
-      <main className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-start py-12 px-4">
+      <main id="main-content" tabIndex={-1} className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-start py-12 px-4 outline-none">
         <div className="w-full max-w-md animate-slide-up">
 
           {/* Creator profile header */}
           <div className="flex flex-col items-center gap-3 mb-8 text-center">
             <div className="relative h-20 w-20 rounded-full overflow-hidden ring-2 ring-brand-500/30">
-              <Image
-                src={avatarUrl}
-                alt={`${displayName} avatar`}
-                fill
-                className="object-cover"
-                unoptimized
+              <Avatar
+                src={creator.avatarUrl}
+                displayName={displayName}
+                slug={slug}
               />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-fg break-words overflow-wrap-anywhere">{displayName}</h1>
+              <h1 className="text-2xl font-bold text-fg break-words">{displayName}</h1>
               <p className="text-sm text-accent font-mono">@{slug}</p>
             </div>
             {creator.bio && (
-              <p className="text-sm text-fg-subtle max-w-xs break-words overflow-wrap-anywhere line-clamp-3">{creator.bio}</p>
+              <p className="text-sm text-fg-subtle max-w-xs break-words line-clamp-3">{creator.bio}</p>
             )}
             <div className="flex gap-2 flex-wrap justify-center">
               <Badge variant="usdc">USDC tips</Badge>
-              <Badge variant="success">
-                {creator.splits.length > 1
-                  ? `${creator.splits.length} collaborators`
-                  : "Solo creator"}
-              </Badge>
+              {creator.splits.length === 0 ? (
+                <Badge variant="warning">Unconfigured</Badge>
+              ) : creator.splits.length === 1 ? (
+                <Badge variant="success">Solo creator</Badge>
+              ) : (
+                <Badge variant="success">
+                  {`${creator.splits.length} collaborators`}
+                </Badge>
+              )}
             </div>
+          </div>
+
+          {/* Split breakdown — who gets paid and how much, before the supporter signs */}
+          <div className="mb-6">
+            <SplitBreakdown splits={creator.splits} />
           </div>
 
           {/* Tip form — client component */}

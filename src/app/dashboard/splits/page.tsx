@@ -74,7 +74,7 @@ export default function SplitsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Split configuration</CardTitle>
+          <CardTitle level={2}>Split configuration</CardTitle>
         </CardHeader>
 
         {loading ? (

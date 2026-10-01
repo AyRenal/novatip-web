@@ -87,5 +87,18 @@ describe("tipEvents", () => {
 
     expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("tipEvents"), err);
     unsub();
+  it("does not throw when emitting with no listeners", () => {
+    expect(() => tipEvents.emit(makePayload())).not.toThrow();
+  });
+
+  it("is safe to unsubscribe the same listener twice", () => {
+    const listener = vi.fn();
+    const unsubscribe = tipEvents.subscribe(listener);
+
+    unsubscribe();
+    expect(() => unsubscribe()).not.toThrow();
+
+    tipEvents.emit(makePayload());
+    expect(listener).not.toHaveBeenCalled();
   });
 });
