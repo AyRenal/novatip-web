@@ -9,6 +9,7 @@
  *   - Custom input sanitises the value (strips non-numeric, collapses extra dots)
  *   - Validation message appears for an invalid custom amount
  *   - Disabled prop prevents interaction
+ *   - A custom presets prop replaces the default list
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -110,5 +111,42 @@ describe("AmountPicker – custom input sanitisation", () => {
   it("shows the summary line for a valid amount", () => {
     render(<AmountPicker value="5" onChange={vi.fn()} />);
     expect(screen.getByText(/\$5 USDC/i)).toBeInTheDocument();
+  });
+});
+
+// ── Configurable presets ──────────────────────────────────────────────────────
+
+describe("AmountPicker – configurable presets", () => {
+  it("renders a custom preset list instead of the default one", () => {
+    render(<AmountPicker value="3" onChange={vi.fn()} presets={["3", "7", "15"]} />);
+
+    ["$3", "$7", "$15"].forEach((label) => {
+      expect(
+        screen.getByRole("button", { name: new RegExp(`Tip \\${label} USDC`, "i") }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: /Tip \$25 USDC/i })).not.toBeInTheDocument();
+  });
+
+  it("calls onChange with a value from the custom preset list when clicked", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<AmountPicker value="3" onChange={onChange} presets={["3", "7", "15"]} />);
+
+    await user.click(screen.getByRole("button", { name: /Tip \$15 USDC/i }));
+
+    expect(onChange).toHaveBeenCalledWith("15");
+  });
+
+  it("marks a custom preset active by the same rule as the default list", () => {
+    render(<AmountPicker value="7" onChange={vi.fn()} presets={["3", "7", "15"]} />);
+    expect(
+      screen.getByRole("button", { name: /Tip \$7 USDC/i }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("falls back to the default list when no presets prop is given", () => {
+    setup();
+    expect(screen.getByRole("button", { name: /Tip \$25 USDC/i })).toBeInTheDocument();
   });
 });

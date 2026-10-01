@@ -1,69 +1,92 @@
 /**
  * src/lib/tipEvents.test.ts
  *
- * Unit tests for the tip lifecycle event bus.
+ * Unit tests for the tipEvents pub/sub bus.
  *
  * Covers:
- *   - A subscribed listener receives an emitted payload
- *   - Multiple listeners all receive the same emitted payload (fan-out)
- *   - Unsubscribing stops further delivery to that listener
- *   - Emitting with no listeners does not throw
- *   - Unsubscribing twice is a no-op
+ *   - A subscribed listener receives the emitted payload
+ *   - Multiple listeners all receive the same emitted payload
+ *   - unsubscribe stops a listener from being called
+ *   - A throwing listener does not stop later listeners from running
+ *   - A throwing listener's error is reported, not silently dropped
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { tipEvents, type TipSuccessPayload } from "./tipEvents";
 
-function makePayload(overrides: Partial<TipSuccessPayload> = {}): TipSuccessPayload {
-  return {
-    fromAddress: "GABCDEF",
-    amount: "2",
-    message: "nice work",
-    slug: "creator-1",
-    ...overrides,
-  };
-}
+const PAYLOAD: TipSuccessPayload = {
+  fromAddress: "GABC1234",
+  amount:      "5",
+  message:     "nice work",
+  slug:        "ada",
+};
 
 describe("tipEvents", () => {
-  it("delivers an emitted payload to a subscribed listener", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("delivers the payload to a subscribed listener", () => {
     const listener = vi.fn();
-    const unsubscribe = tipEvents.subscribe(listener);
+    const unsub = tipEvents.subscribe(listener);
 
-    const payload = makePayload();
-    tipEvents.emit(payload);
+    tipEvents.emit(PAYLOAD);
 
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith(payload);
-
-    unsubscribe();
+    expect(listener).toHaveBeenCalledWith(PAYLOAD);
+    unsub();
   });
 
-  it("fans out an emitted payload to all subscribed listeners", () => {
-    const listenerA = vi.fn();
-    const listenerB = vi.fn();
-    const unsubscribeA = tipEvents.subscribe(listenerA);
-    const unsubscribeB = tipEvents.subscribe(listenerB);
+  it("delivers the payload to every subscribed listener", () => {
+    const a = vi.fn();
+    const b = vi.fn();
+    const unsubA = tipEvents.subscribe(a);
+    const unsubB = tipEvents.subscribe(b);
 
-    const payload = makePayload({ slug: "creator-2" });
-    tipEvents.emit(payload);
+    tipEvents.emit(PAYLOAD);
 
-    expect(listenerA).toHaveBeenCalledWith(payload);
-    expect(listenerB).toHaveBeenCalledWith(payload);
-
-    unsubscribeA();
-    unsubscribeB();
+    expect(a).toHaveBeenCalledWith(PAYLOAD);
+    expect(b).toHaveBeenCalledWith(PAYLOAD);
+    unsubA();
+    unsubB();
   });
 
-  it("stops delivering to a listener after it unsubscribes", () => {
+  it("stops notifying a listener once it has unsubscribed", () => {
     const listener = vi.fn();
-    const unsubscribe = tipEvents.subscribe(listener);
+    const unsub = tipEvents.subscribe(listener);
+    unsub();
 
-    unsubscribe();
-    tipEvents.emit(makePayload());
+    tipEvents.emit(PAYLOAD);
 
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("still calls later listeners when an earlier one throws", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const throwing = vi.fn(() => {
+      throw new Error("boom");
+    });
+    const after = vi.fn();
+    const unsubThrowing = tipEvents.subscribe(throwing);
+    const unsubAfter = tipEvents.subscribe(after);
+
+    expect(() => tipEvents.emit(PAYLOAD)).not.toThrow();
+
+    expect(throwing).toHaveBeenCalledWith(PAYLOAD);
+    expect(after).toHaveBeenCalledWith(PAYLOAD);
+    unsubThrowing();
+    unsubAfter();
+  });
+
+  it("reports a throwing listener's error instead of dropping it silently", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const err = new Error("boom");
+    const throwing = vi.fn(() => {
+      throw err;
+    });
+    const unsub = tipEvents.subscribe(throwing);
+
+    tipEvents.emit(PAYLOAD);
+
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("tipEvents"), err);
+    unsub();
   it("does not throw when emitting with no listeners", () => {
     expect(() => tipEvents.emit(makePayload())).not.toThrow();
   });

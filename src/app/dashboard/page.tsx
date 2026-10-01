@@ -11,11 +11,12 @@
 
 import { useCallback, useEffect } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { analyticsApi } from "@/lib/api";
+import { analyticsApi, authApi, creatorApi, type CreatorProfile } from "@/lib/api";
 import { useAbortableRequest } from "@/hooks/useAbortableRequest";
 import { formatUsdc } from "@novatip/sdk";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ErrorPanel } from "@/components/ui/ErrorPanel";
+import { JarStatusBanner } from "@/components/JarStatusBanner";
 import { Leaderboard } from "@/components/Leaderboard";
 import { RecentTips } from "@/components/RecentTips";
 import { TipChart } from "@/components/TipChart";
@@ -48,10 +49,29 @@ export default function DashboardPage() {
   const { jwt } = useWallet();
   const { data: totals, loading, error, run } = useAbortableRequest<Totals | null>(null);
 
+  // Only feeds the jar-registration check below. Its own failure isn't
+  // surfaced — the rest of the page has already loaded via `totals` above,
+  // and this is a nice-to-have on top of it, not a prerequisite for it.
+  const { data: creator, run: runCreator } = useAbortableRequest<CreatorProfile | null>(null);
+
   const fetchTotals = useCallback(() => {
     if (!jwt) return;
     run((signal) => analyticsApi.totals(jwt, { signal }));
   }, [jwt, run]);
+
+  useEffect(() => {
+    fetchTotals();
+  }, [fetchTotals]);
+
+  useEffect(() => {
+    if (!jwt) return;
+    runCreator((signal) =>
+      authApi
+        .me(jwt, { signal })
+        .then((r) => creatorApi.getBySlug(r.user.slug, { signal }))
+        .then((r) => r.creator),
+    );
+  }, [jwt, runCreator]);
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -92,9 +112,10 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-8 animate-fade-in">
 
       {/* Page title */}
-      <div>
+      <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold text-fg">Overview</h1>
-        <p className="text-sm text-fg-subtle mt-1">Your earnings and supporter activity</p>
+        <p className="text-sm text-fg-subtle">Your earnings and supporter activity</p>
+        {creator && <JarStatusBanner jarId={creator.jarId} />}
       </div>
 
       {/* Error */}

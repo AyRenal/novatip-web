@@ -335,9 +335,9 @@ function IndexedTipRow({ tip }: { tip: IndexedTip }) {
           </p>
         )}
       </div>
-      <span className="text-xs text-fg-dim shrink-0 mt-0.5">
+      <TimeAgo iso={tip.ledgerAt} className="text-xs text-fg-dim shrink-0 mt-0.5">
         {timeAgo(tip.ledgerAt)}
-      </span>
+      </TimeAgo>
     </li>
   );
 }

@@ -77,6 +77,13 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
     setAmount(getLastTipAmount());
   }, []);
 
+  // Restore the supporter's last tip amount after mount — not in the initial
+  // useState, so the server-rendered markup (which has no access to
+  // localStorage) matches the client's first paint and only then updates.
+  useEffect(() => {
+    setAmount(getLastTipAmount());
+  }, []);
+
   // ── Validation ─────────────────────────────────────────────────────────────
   const stroops    = (() => {
     try { return usdcToStroops(amount); } catch { return BigInt(0); }
