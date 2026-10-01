@@ -35,8 +35,14 @@ export function AmountPicker({ value, onChange, disabled = false }: AmountPicker
   }
 
   function handleCustomFocus() {
-    setIsCustom(true);
-    onChange("");
+    // Only clear the amount when the user is switching away from a preset.
+    // If they tab through the custom field (or re-focus it while it is
+    // already active) the existing value should be preserved so the tip
+    // button stays enabled and the amount summary does not disappear.
+    if (!isCustom) {
+      setIsCustom(true);
+      onChange("");
+    }
   }
 
   function handleCustomChange(e: React.ChangeEvent<HTMLInputElement>) {

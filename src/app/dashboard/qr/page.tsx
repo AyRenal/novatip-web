@@ -6,7 +6,7 @@
  * Dashboard page showing the creator's QR code + share link.
  */
 
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { authApi } from "@/lib/api";
 import { useAbortableRequest } from "@/hooks/useAbortableRequest";
@@ -15,21 +15,23 @@ import { getQrPngUrl } from "@/lib/tipUrl";
 
 export default function QRPage() {
   const { jwt }  = useWallet();
-  const { data: slug, loading, run } = useAbortableRequest<string | null>(null);
+  const { data: slug, loading, error, run } = useAbortableRequest<string | null>(null);
 
-  useEffect(() => {
+  const fetchSlug = useCallback(() => {
     if (!jwt) return;
-    // A failed lookup just leaves slug at null — same as never having one —
-    // so the error itself isn't surfaced here.
     run((signal) => authApi.me(jwt, { signal }).then((r) => r.user.slug));
   }, [jwt, run]);
+
+  useEffect(() => {
+    fetchSlug();
+  }, [fetchSlug]);
 
   const pngUrl = slug ? getQrPngUrl(slug) : "";
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in max-w-md">
       <div>
-        <h1 className="text-2xl font-bold text-fg">QR Code & Link</h1>
+        <h1 className="text-2xl font-bold text-fg">QR Code &amp; Link</h1>
         <p className="text-sm text-fg-subtle mt-1">
           Share or print your QR code so anyone can tap to tip you instantly.
         </p>
@@ -42,11 +44,26 @@ export default function QRPage() {
         </div>
       )}
 
-      {!loading && slug && (
+      {/* A failed lookup is shown as an error, distinct from simply having no slug yet. */}
+      {!loading && error && (
+        <div className="rounded-xl bg-danger/10 border border-danger/20 px-4 py-3 flex flex-col gap-3">
+          <p className="text-sm text-danger">
+            Failed to load your QR code: {error}
+          </p>
+          <button
+            onClick={fetchSlug}
+            className="self-start text-sm font-medium text-brand-400 hover:text-brand-300 transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && slug && (
         <QRDownload slug={slug} pngUrl={pngUrl} />
       )}
 
-      {!loading && !slug && (
+      {!loading && !error && !slug && (
         <p className="text-sm text-fg-faint">
           Complete onboarding to generate your QR code.
         </p>

@@ -124,11 +124,15 @@ export default async function TipPage({ params }: Props) {
             )}
             <div className="flex gap-2 flex-wrap justify-center">
               <Badge variant="usdc">USDC tips</Badge>
-              <Badge variant="success">
-                {creator.splits.length > 1
-                  ? `${creator.splits.length} collaborators`
-                  : "Solo creator"}
-              </Badge>
+              {creator.splits.length === 0 ? (
+                <Badge variant="warning">Unconfigured</Badge>
+              ) : creator.splits.length === 1 ? (
+                <Badge variant="success">Solo creator</Badge>
+              ) : (
+                <Badge variant="success">
+                  {`${creator.splits.length} collaborators`}
+                </Badge>
+              )}
             </div>
           </div>
 

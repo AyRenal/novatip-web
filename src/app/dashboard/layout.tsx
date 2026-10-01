@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { authApi } from "@/lib/api";
 import { getTipUrl } from "@/lib/tipUrl";
@@ -92,8 +92,7 @@ function TipLinkCopy({ slug }: { slug: string }) {
 // ── Layout ────────────────────────────────────────────────────────────────────
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isConnected, isConnecting, publicKey, jwt } = useWallet();
-  const router   = useRouter();
+  const { isConnected, publicKey, jwt } = useWallet();
   const pathname = usePathname();
   const [sessionKey, setSessionKey] = useState(0);
   const [slug, setSlug] = useState<string | null>(null);
@@ -114,12 +113,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [isConnected, publicKey]);
 
-  // Redirect unauthenticated users to home
-  useEffect(() => {
-    if (!isConnecting && !isConnected) {
-      router.replace("/");
-    }
-  }, [isConnected, isConnecting, router]);
+  // Guard: a disconnected visitor sees an in-place connect prompt (below).
+  // We intentionally do NOT also call router.replace("/") here — doing both
+  // caused a race where the prompt painted and was then navigated away from
+  // before the creator could press it. One behaviour is enough; the prompt
+  // is the better choice because it gives the user a clear, immediate action
+  // and does not navigate them away from a page they deliberately opened.
 
   // Fetch the creator's slug once per session so the copy control in the
   // header always reflects the current wallet without hitting /auth/me on
