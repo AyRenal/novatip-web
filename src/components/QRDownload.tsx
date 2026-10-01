@@ -25,6 +25,7 @@ interface QRDownloadProps {
 
 export function QRDownload({ slug, pngUrl, className }: QRDownloadProps) {
   const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const { copied, failed, copy, reset } = useCopyToClipboard();
 
   const tipUrl = getTipUrl(slug);
@@ -40,8 +41,13 @@ export function QRDownload({ slug, pngUrl, className }: QRDownloadProps) {
   // ── Download PNG ───────────────────────────────────────────────────────────
   async function handleDownload() {
     setDownloading(true);
+    setDownloadError(null);
     try {
       const res  = await fetch(pngUrl);
+      if (!res.ok) {
+        setDownloadError("Couldn\u2019t fetch the QR code. Please try again.");
+        return;
+      }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
@@ -54,7 +60,7 @@ export function QRDownload({ slug, pngUrl, className }: QRDownloadProps) {
         URL.revokeObjectURL(url);
       }, 100);
     } catch {
-      // Silently fail — user can still right-click the QR image
+      setDownloadError("Couldn\u2019t fetch the QR code. Please try again.");
     } finally {
       setDownloading(false);
     }
@@ -125,9 +131,13 @@ export function QRDownload({ slug, pngUrl, className }: QRDownloadProps) {
           onClick={handleCopy}
           aria-label="Copy tip link"
         >
-          {failed ? "Copy failed" : copied ? "✓ Copied" : "Copy link"}
+          {failed ? "Copy failed" : copied ? "\u2713 Copied" : "Copy link"}
         </Button>
       </div>
+
+      {downloadError && (
+        <p className="text-xs text-danger text-center">{downloadError}</p>
+      )}
 
       <p className="text-xs text-fg-faint text-center">
         Print or share your QR code so anyone can tap to tip you

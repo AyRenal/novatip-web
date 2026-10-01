@@ -67,7 +67,8 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
   const amountValid = isValidTipAmount(stroops) && isWithinTipCeiling(amount);
   const trimmedMessage = message.trim();
   const messageBytes   = utf8ByteLength(trimmedMessage);
-  const canSubmit   = isConnected && amountValid && messageBytes <= MAX_MESSAGE_BYTES && step === "input";
+  const hasRecipients = splits.length > 0;
+  const canSubmit   = isConnected && hasRecipients && amountValid && messageBytes <= MAX_MESSAGE_BYTES && step === "input";
 
   // ── Splits-too-small warning ────────────────────────────────────────────────
   // The contract computes each non-final collaborator's share as
@@ -82,7 +83,7 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   async function handleTip() {
-    if (!publicKey || !amountValid) return;
+    if (!publicKey || !amountValid || !hasRecipients) return;
 
     setStep("signing");
     setError(null);
@@ -156,7 +157,7 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
         <AmountPicker
           value={amount}
           onChange={setAmount}
-          disabled={step === "signing" || step === "confirm"}
+          disabled={step === "signing" || step === "confirm" || !hasRecipients}
         />
 
         {/* Message input */}
@@ -168,7 +169,7 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            disabled={step === "signing" || step === "confirm"}
+            disabled={step === "signing" || step === "confirm" || !hasRecipients}
             placeholder="Say something nice… 🎉"
             rows={2}
             className="w-full rounded-xl bg-surface-strong border border-hairline px-4 py-3
@@ -181,6 +182,15 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
             {messageBytes}/{MAX_MESSAGE_BYTES} bytes
           </p>
         </div>
+
+        {/* Unconfigured jar warning */}
+        {!hasRecipients && (
+          <div className="rounded-xl bg-warning/10 border border-warning/20 px-4 py-3">
+            <p className="text-sm text-warning">
+              This jar has no recipients configured and cannot receive tips.
+            </p>
+          </div>
+        )}
 
         {/* Splits-too-small warning */}
         {zeroPaidCount > 0 && (
@@ -236,9 +246,17 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
               disabled={!canSubmit}
               loading={step === "signing"}
               onClick={step === "error" ? handleRetry : handleCtaClick}
-              aria-label={step === "signing" ? "Sending tip…" : `Send $${amount} USDC tip`}
+              aria-label={
+                !hasRecipients
+                  ? "Jar not configured"
+                  : step === "signing"
+                  ? "Sending tip…"
+                  : `Send $${amount} USDC tip`
+              }
             >
-              {step === "signing"
+              {!hasRecipients
+                ? "Jar not configured"
+                : step === "signing"
                 ? "Waiting for signature…"
                 : step === "error"
                 ? "Retry"

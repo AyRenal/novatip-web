@@ -59,36 +59,72 @@ See the [novatip-backend README](https://github.com/Novatip/novatip-backend) for
 the full list of required environment variables (JWT secret, Stellar RPC URL,
 etc.).
 
-### 4. Build the SDK (for local SDK development only)
+### 4. SDK dependency: commit pin and bump workflow
 
 When you install this repo's dependencies with `npm install`, the SDK is
 fetched directly from GitHub (see the `@novatip/sdk` entry in `package.json`).
 No separate build step is needed for normal frontend work.
 
+#### Why the SDK is pinned to an exact commit
+
+In `package.json`, `@novatip/sdk` is pinned to an exact commit SHA:
+
+```json
+"@novatip/sdk": "github:Novatip/novatip-sdk#eeb581655ecc20b7a27ba16705bab62311e491b4"
+```
+
+The pin exists because an unpinned specification (such as pointing to a branch or loose tag) allowed a stale copy of the package to survive in deployment caches (e.g. Vercel and CI). This resulted in production builds deploying against an outdated SDK version that no longer matched updated contract interfaces or backend endpoints.
+
+> **Caution:** Do not loosen the dependency spec (e.g. to `github:Novatip/novatip-sdk#main`). Loosening the spec reintroduces the deployment cache bug.
+
+#### Working on the SDK locally
+
 If you want to work on the SDK and see your changes reflected in this app
 without publishing a new commit, switch the dependency to the local checkout:
 
 1. Edit `package.json` and change:
-   ```
+   ```json
    "@novatip/sdk": "github:Novatip/novatip-sdk#<commit>"
    ```
    to:
-   ```
+   ```json
    "@novatip/sdk": "file:../novatip-sdk"
    ```
 2. Build the SDK:
-   ```
+   ```bash
    cd ../novatip-sdk
    npm install
    npm run build
    ```
 3. Re-link in this repo:
-   ```
+   ```bash
    cd ../novatip-web
    npm install
    ```
 
 Revert the `package.json` change before opening a pull request.
+
+#### Bumping the SDK and regenerating the lockfile
+
+When changes to `novatip-sdk` are merged and need to be pulled into this app:
+
+1. Push or merge the changes in `novatip-sdk` and copy the full 40-character commit SHA.
+2. Update `package.json` and regenerate `package-lock.json`:
+   ```bash
+   npm install github:Novatip/novatip-sdk#<commit-sha>
+   ```
+   or edit `package.json` with the new commit SHA and run `npm install`.
+3. **Verify the lockfile uses HTTPS, not SSH:**
+   Check `package-lock.json` to confirm that the `resolved` entry for `@novatip/sdk` uses an HTTPS URL:
+   ```json
+   "resolved": "git+https://github.com/Novatip/novatip-sdk.git#<commit-sha>"
+   ```
+   The lockfile **must use an https URL, not ssh** (`git+ssh:` or `git@github.com:`). Automated CI environments and deployment platforms (e.g., Vercel) build without SSH keys, and an SSH URL in the lockfile will fail the deployment build.
+4. Verify tests and types:
+   ```bash
+   npm run typecheck
+   npm test
+   ```
 
 ### 5. Deploy the tip_splitter contract
 
@@ -154,6 +190,24 @@ rather than falling back to localhost and shipping broken previews; see
 `resolveSiteUrl` in `src/lib/config.ts`. Trailing slashes, whitespace, and any
 query or fragment are normalised away, so `https://novatip.xyz` and
 `https://novatip.xyz/` are equivalent.
+
+### How NEXT_PUBLIC_ variables are read (important for contributors)
+
+`NEXT_PUBLIC_` variables are substituted into the client bundle **at build
+time** by Next.js matching the exact literal text `process.env.NEXT_PUBLIC_X`
+in source. A computed lookup — `process.env[key]` or
+`process.env[\`NEXT_PUBLIC_${name}\`]` — is **never replaced** and evaluates to
+`undefined` in the browser.
+
+The failure mode is subtle: the computed lookup works fine in `npm run dev`
+(Node has access to the real `process.env`), so a broken read is invisible
+locally and only surfaces in production after a deploy.
+
+`src/lib/config.ts` is written to respect this rule: every variable is read as
+a direct literal member access (`process.env.NEXT_PUBLIC_FOO`) rather than
+through a shared helper that takes a variable name. Do not refactor this into a
+loop or a helper function that receives the key as a string argument — every
+value will be `undefined` in the browser.
 
 ## Troubleshooting
 
@@ -222,6 +276,48 @@ match) in `.env.local`.
 
 ---
 
+### `Freighter is currently on XXXX…XXXX but this action is for YYYY…YYYY`
+
+**Cause:** The Freighter extension has a different account selected than the one
+that was connected when the session started. The transaction is built for the
+connected address, so a signature from a different key is rejected by the
+network as `txBAD_AUTH`. The app detects the mismatch before building the
+transaction and surfaces a readable message instead of raw XDR.
+
+**Fix:** Either:
+- Switch to the correct account in Freighter (the one shown in the error), **or**
+- Click **Disconnect** in the app and reconnect — the new connect flow will pick
+  up whichever account is currently active in Freighter.
+
+---
+
+### `XXXX…XXXX cannot receive USDC yet` when saving splits
+
+**Cause:** Every recipient in a split must hold a USDC trustline before the jar
+can be saved. The `tip_splitter` contract pays all recipients atomically, so a
+single account without a trustline causes the entire tip to fail — and it fails
+for the supporter, who did nothing wrong and cannot fix it. The app checks
+truslines at save time so the creator can act on it before any supporter is
+affected.
+
+The full message is one of:
+
+> `<addr> cannot receive USDC yet. That account needs to add a USDC trustline before it can be paid, otherwise every tip to this jar fails.`
+
+> `These accounts cannot receive USDC yet: <addr1>, <addr2>. Each needs to add a USDC trustline before it can be paid, otherwise every tip to this jar fails.`
+
+**Fix:** Each flagged account must add a USDC trustline. In Freighter:
+1. Open Freighter and switch to the flagged account.
+2. Go to **Manage Assets** → **Add Asset**.
+3. Search for **USDC** and add the Circle-issued token on the correct network
+   (Testnet or Mainnet to match `NEXT_PUBLIC_STELLAR_NETWORK`).
+4. Once added, retry saving the splits in the dashboard.
+
+A freshly funded Stellar account has no trustlines by default — this step is
+required for any new collaborator account before it can appear in a split.
+
+---
+
 ## Key Pages
 
 /                   - Home landing page
@@ -230,6 +326,33 @@ match) in `.env.local`.
 /dashboard          - Creator earnings overview
 /dashboard/splits   - Collaborator splits manager
 /dashboard/qr       - QR code and share link
+
+## Tip page URL shapes
+
+A tip page answers on two URL shapes:
+
+| Shape | Example | Notes |
+|---|---|---|
+| `/alice` | `https://novatip.xyz/alice` | **Canonical.** Share this link and use it in QR codes. |
+| `/@alice` | `https://novatip.xyz/@alice` | Also resolves. Both forms reach the same page. |
+
+**The `@` belongs to the jar ID, not to the URL.** When a creator claims the
+slug `alice`, the corresponding on-chain jar is registered as `@alice`. The web
+URL is `/alice` (without the `@`). Visiting `/@alice` also works — the page
+component strips the leading `@` via `normalizeSlug` before resolving the
+creator — but `/alice` is the form the app generates for share links and QR
+codes.
+
+**Relationship between slug and jar ID:**
+
+- **Slug** (`alice`) — the identifier stored in the backend database and used in
+  all web URLs.
+- **Jar ID** (`@alice`) — the on-chain identifier passed to the `tip_splitter`
+  contract. Derived from the slug by prepending `@`. See `jarIdForSlug` in
+  `src/lib/jar.ts`.
+
+This distinction matters when reading contract state or events: the contract
+always uses `@alice`, while the REST API and web routes always use `alice`.
 
 ## Tip Flow
 
@@ -293,6 +416,40 @@ The app is developed and tested against the following desktop browsers:
 Any browser that supports the Freighter extension and modern ES2020 features
 (optional chaining, nullish coalescing, `Promise.allSettled`) is expected to
 work. No IE11 or legacy-browser polyfills are included.
+
+---
+
+## Wallet account requirements
+
+Two conditions must be met before a tip or a split save can succeed. Both are
+enforced in code and produce clear messages, but they are worth knowing before
+you test with fresh accounts.
+
+### The signing account must match the connected account
+
+Freighter signs with whichever account is currently active in the extension.
+The transaction is built for the address that was connected at login, so if you
+switch accounts in Freighter between connecting and tipping, the network rejects
+the submission as `txBAD_AUTH`. The app catches this before submitting and shows:
+
+> `Freighter is currently on XXXX…XXXX but this action is for YYYY…YYYY. Switch accounts in Freighter, or reconnect your wallet to use the active one.`
+
+The guard lives in `src/lib/wallet.ts` (`assertActiveAccount`).
+
+### Every split recipient needs a USDC trustline
+
+On Stellar an account cannot hold an asset it has not explicitly opted in to.
+The `tip_splitter` contract pays all split recipients in a single atomic call,
+so one collaborator without a USDC trustline fails the whole tip. The app checks
+truslines when splits are saved rather than when a tip arrives, so the creator
+(not the supporter) sees the error at the moment they can act on it:
+
+> `<addr> cannot receive USDC yet. That account needs to add a USDC trustline before it can be paid, otherwise every tip to this jar fails.`
+
+A freshly created Stellar account has no trustlines. Any new collaborator must
+add the USDC asset in Freighter (**Manage Assets → Add Asset**) before being
+added to a split. The guard lives in `src/lib/trustline.ts`
+(`assertRecipientsCanReceive`).
 
 ---
 
@@ -578,6 +735,37 @@ sees the tip immediately; the re-fetch in step 5 is the source of truth.
 
 ---
 
+### Optimistic tip feed and polling windows
+
+The `RecentTips` component (`src/components/RecentTips.tsx`) displays live tips on the creator dashboard. It combines optimistic updates with adaptive polling to balance responsiveness with backend load.
+
+#### How it works
+
+1. **Normal cadence (15s):** In steady state, `RecentTips` polls `analyticsApi.recent()` every 15 seconds (`NORMAL_INTERVAL = 15_000`). Polling automatically pauses when the browser tab is hidden and aborts in-flight requests via `usePolling` / `useAbortableRequest`.
+2. **Optimistic prepending on tip success:** When a tip succeeds, `TipForm` emits an event on `tipEvents`. `RecentTips` immediately creates an optimistic entry with `kind: "pending"`, a unique client ID, and an expiration timestamp `expiresAt = Date.now() + 30_000`, prepending it to the list with a "confirming…" status.
+3. **Fast polling burst (3s for 30s):** To catch the indexed tip as soon as possible, `RecentTips` temporarily switches its polling interval from 15 seconds to 3 seconds (`FAST_INTERVAL = 3_000`) for a 30-second window (`FAST_WINDOW_MS = 30_000`). Once the window expires, it reverts to the 15-second interval.
+4. **Reconciliation and replacement:** When a fresh batch of indexed tips arrives from the API, `mergeWithPending()` reconciles pending entries with indexed records. An entry is confirmed when `isMatch(indexed, pending)` matches both the sender's address AND the amount. Confirmed pending items are removed from state, seamlessly replaced by the persisted indexed record.
+5. **Downgrade to unconfirmed:** If the 30-second window elapses without the tip appearing in the indexed response, `mergeWithPending()` downgrades the entry to `kind: "unconfirmed"`, allowing the UI to notify the user rather than leaving a permanent "confirming…" state.
+
+#### Why indexer lag makes this necessary
+
+When a transaction is confirmed on Stellar by Soroban, the client's wallet knows immediately. However:
+- The backend indexer must observe the new ledger, extract the `TipReceived` contract event, process splits, and write records to PostgreSQL.
+- This indexing cycle introduces an inherent delay of **~5–10 seconds** (typically ~6 seconds).
+- Polling at a normal 15-second interval after transaction confirmation would force users to wait anywhere from 6 to 21 seconds to see their tip reflected.
+- The optimistic update provides instant visual confirmation, while the 3-second fast polling burst ensures the canonical indexed record replaces the placeholder almost as soon as the indexer commits it to the database.
+
+#### Failure modes to watch for
+
+Contributors modifying `RecentTips`, matching helpers, or event payloads should be vigilant about these potential pitfalls:
+
+- **Duplicate entries ("ghost duplicates"):** If `isMatch()` is too strict (e.g. strict string matching on amounts formatted differently) or if fields don't match, the optimistic entry will never be reconciled with the indexed counterpart. Both the pending item and the indexed record will render simultaneously.
+- **Premature clearing of pending tips:** If `isMatch()` matches *only* on sender address without verifying amount (or timestamp), an earlier tip from a returning supporter will falsely match and clear their new pending tip before it actually indexes.
+- **Stuck pending rows:** If the backend indexer drops an event, hangs, or experiences an extended lag exceeding 30 seconds, pending items without expiration handling would spin forever. Always preserve the `expiresAt` expiration check and the downgrade to `kind: "unconfirmed"`.
+- **In-flight request races on visibility change:** When a tab is backgrounded or brought into focus, un-aborted in-flight requests could resolve out of order. Ensure requests use abort signals so stale polling responses never overwrite newer state.
+
+---
+
 ### Worked example — adding a feature that needs shared state
 
 **Scenario:** you want to show a "New tip!" badge in the dashboard sidebar
@@ -616,6 +804,45 @@ dashboard-local UI state, not identity state.
 If it needed to survive a full page reload, you would persist it in
 `localStorage` yourself — but that is almost never the right call for a
 transient UI indicator.
+
+---
+
+### Error taxonomy
+
+Failures across the client arrive in four distinct shapes depending on where in the stack the failure originates. Knowing the error type determines where the error should be handled or translated into user-facing text:
+
+| Source | Error Type / Format | Example | Responsible Module |
+|---|---|---|---|
+| **Backend API** | `ApiError` class instance | `new ApiError(404, "NOT_FOUND", "Creator not found")` | `src/lib/api.ts` constructs `ApiError` from response payloads (`status`, `code`, `message`). UI components and pages inspect `err.status`/`err.code` or display `err.message`. |
+| **Contract (typed)** | `NovatipContractError` from `@novatip/sdk` | `NovatipContractError` with `code: ContractErrorCode.JarNotFound` | `@novatip/sdk` parses contract error codes from simulations. Feature modules such as `src/lib/jar.ts` inspect `err.code` or map contract codes to friendly messages. |
+| **Simulation (raw)** | Plain `Error` with simulation diagnostic string | `Error("HostError: Error(Contract, #3)")` | Soroban RPC / Stellar SDK produces raw diagnostic strings when simulation fails without a structured SDK contract error. Modules such as `src/lib/jar.ts` check `err.message` via pattern matching. |
+| **Transaction Submission** | Base64-encoded `TransactionResult` XDR | `Error("Transaction submission failed: AAAAAAAA+QT////6AAAAAA==")` | `src/lib/txerror.ts` (`describeSubmissionError`, `decodeResultCode`) decodes the base64 XDR using `@stellar/stellar-sdk` and translates result codes (e.g., `txBadAuth`, `txInsufficientBalance`, `txBadSeq`) into actionable human prose. |
+
+#### Detailed breakdown
+
+1. **Backend `ApiError` (`src/lib/api.ts`)**
+   - **When it occurs:** Thrown by `request()` in `src/lib/api.ts` whenever the REST backend returns a non-2xx HTTP status, as well as on network timeouts or aborted requests.
+   - **Shape:** `ApiError` instance with properties `status` (number), `code` (string), and `message` (string).
+   - **Example:** `throw new ApiError(404, "NOT_FOUND", "Creator not found");`
+   - **Handling:** UI components and route handlers (such as `src/app/[slug]/page.tsx`) catch `ApiError` and branch on `error.status` or `error.code` to show specific UI states (like 404 views) or display `error.message`.
+
+2. **Contract `NovatipContractError` (`@novatip/sdk`)**
+   - **When it occurs:** Thrown by `@novatip/sdk` methods when a Soroban contract call simulation fails with a known contract error code.
+   - **Shape:** An instance of `NovatipContractError` with a typed `code` property (`ContractErrorCode`).
+   - **Example:** `new NovatipContractError(ContractErrorCode.JarNotFound)`
+   - **Handling:** Catch blocks in feature modules (e.g. `src/lib/jar.ts`) check `err instanceof NovatipContractError` and test `err.code` against `ContractErrorCode` to handle known states (for example, treating `JarNotFound` as `null` during onboarding).
+
+3. **Raw Simulation String**
+   - **When it occurs:** Soroban RPC returns simulation diagnostic failures that the SDK could not parse into a typed `NovatipContractError` (e.g., host errors, budget exhaustion, or contract panics).
+   - **Shape:** A standard JavaScript `Error` whose `message` contains diagnostic strings like `"HostError: Error(Contract, #3)"`.
+   - **Example:** `new Error("Transaction simulation failed: HostError: Error(Contract, #3)")`
+   - **Handling:** Catch blocks perform regex or substring matching on `err.message` (e.g. `isJarNotFound` in `src/lib/jar.ts` tests `/Error\(Contract,\s*#3\)/`) to identify the failure when SDK error typing is unavailable.
+
+4. **Transaction Submission Failures (`src/lib/txerror.ts`)**
+   - **When it occurs:** The transaction was simulated successfully and signed by the wallet, but the Stellar network rejected it during submission.
+   - **Shape:** The SDK surfaces the error as a raw message ending in a base64-encoded `TransactionResult` XDR.
+   - **Example:** `Error: Transaction submission failed: AAAAAAAA+QT////6AAAAAA==`
+   - **Handling:** Wrap transaction submission promises with `describeSubmissionError()` from `src/lib/txerror.ts` (as in `src/lib/jar.ts`). `lib/txerror.ts` extracts the base64 XDR, decodes the union result code via `xdr.TransactionResult.fromXDR()`, and maps cryptic codes (such as `txBadAuth`, `txBadSeq`, `txInsufficientBalance`) to clear, actionable user messages (e.g. switching Freighter accounts or acquiring XLM).
 
 ## Accessibility
 

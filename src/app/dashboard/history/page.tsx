@@ -8,7 +8,7 @@
  * sender address, amount, message, and ledger timestamp.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { analyticsApi, RECENT_TIPS_MAX_LIMIT } from "@/lib/api";
 import { formatUsdc } from "@novatip/sdk";
@@ -45,15 +45,24 @@ export default function HistoryPage() {
   // is the only signal a screen reader user gets that rows were appended.
   const [announcement, setAnnouncement] = useState("");
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Each call fetches one page starting after the rows already shown and
   // appends it, so a load more costs one page rather than the whole history,
   // and existing rows are never replaced.
   const fetchPage = useCallback((offset: number) => {
     if (!jwt) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     if (offset > 0) setLoadingMore(true);
     analyticsApi
-      .recent(jwt, PAGE_SIZE, undefined, offset)
+      .recent(jwt, PAGE_SIZE, { signal: controller.signal }, offset)
       .then((r) => {
         // A tip indexed between pages shifts the offset by one, which would
         // repeat the last row of the previous page — skip ids already shown.
@@ -78,6 +87,8 @@ export default function HistoryPage() {
         }
       })
       .catch((e: Error) => {
+        // Ignore aborted requests — component is unmounted or jwt changed.
+        if ((e as any).code === "ABORTED") return;
         // A failed later page must not replace the rows already shown with
         // a page-level error — report it beside the button so it can retry.
         if (offset === 0) setError(e.message);
@@ -86,6 +97,10 @@ export default function HistoryPage() {
       .finally(() => {
         setLoading(false);
         setLoadingMore(false);
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+          setLoading(false);
+        }
       });
   }, [jwt]);
 
@@ -94,6 +109,12 @@ export default function HistoryPage() {
     setHasMore(true);
     setPageError(null);
     fetchPage(0);
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [fetchPage]);
 
   function loadMore() {
@@ -106,16 +127,16 @@ export default function HistoryPage() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Tip History</h1>
-        <p className="text-sm text-gray-400 mt-1">
+        <h1 className="text-2xl font-bold text-fg">Tip History</h1>
+        <p className="text-sm text-fg-subtle mt-1">
           All tips received, newest first
         </p>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3">
-          <p className="text-sm text-red-400">{error}</p>
+        <div className="rounded-xl bg-danger/10 border border-danger/20 px-4 py-3">
+          <p className="text-sm text-danger">{error}</p>
         </div>
       )}
 
@@ -200,7 +221,7 @@ export default function HistoryPage() {
 
         {hasMore && tips.length > 0 && (
           <div className="pt-4 flex flex-col items-center gap-2">
-            {pageError && <p className="text-xs text-red-400">{pageError}</p>}
+            {pageError && <p className="text-xs text-danger">{pageError}</p>}
             <Button
               variant="ghost"
               size="sm"
@@ -214,7 +235,9 @@ export default function HistoryPage() {
 
         {!hasMore && tips.length > 0 && (
           <p className="pt-4 text-center text-xs text-gray-500">
-            That&apos;s all your tips.
+            {tips.length >= RECENT_TIPS_MAX_LIMIT
+              ? `Showing all tips (${RECENT_TIPS_MAX_LIMIT} max)`
+              : "That\u2019s all your tips."}
           </p>
         )}
       </Card>
