@@ -24,6 +24,7 @@ import {
   makeSignTransaction,
   usdcToStroops,
 } from "@/lib/wallet";
+import { getUsdcBalance } from "@/lib/balance";
 import { isValidTipAmount } from "@novatip/sdk";
 import { tipEvents } from "@/lib/tipEvents";
 import { isLargeTip, isWithinTipCeiling } from "@/lib/tipAmount";
@@ -52,6 +53,22 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
   const [step,    setStep]    = useState<FormStep>("input");
   const [error,   setError]   = useState<string | null>(null);
   const [txAmount, setTxAmount] = useState("");
+  const [balance, setBalance] = useState<bigint | null>(null);
+
+  // Read the supporter's USDC balance once connected, so an unaffordable
+  // amount can be caught here instead of surfacing as an opaque wallet/chain
+  // rejection after they've already signed.
+  useEffect(() => {
+    if (!publicKey) {
+      setBalance(null);
+      return;
+    }
+    let cancelled = false;
+    getUsdcBalance(publicKey)
+      .then((b) => { if (!cancelled) setBalance(b); })
+      .catch(() => { if (!cancelled) setBalance(null); });
+    return () => { cancelled = true; };
+  }, [publicKey]);
 
   // Restore the supporter's last tip amount after mount — not in the initial
   // useState, so the server-rendered markup (which has no access to
@@ -64,22 +81,15 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
   const stroops    = (() => {
     try { return usdcToStroops(amount); } catch { return BigInt(0); }
   })();
-  const amountValid = isValidTipAmount(stroops) && isWithinTipCeiling(amount);
+  const amountValid = isValidTipAmount(stroops);
+  const insufficientBalance = balance !== null && amountValid && stroops > balance;
   const trimmedMessage = message.trim();
-  const messageBytes   = utf8ByteLength(trimmedMessage);
-  const hasRecipients = splits.length > 0;
-  const canSubmit   = isConnected && hasRecipients && amountValid && messageBytes <= MAX_MESSAGE_BYTES && step === "input";
-
-  // ── Splits-too-small warning ────────────────────────────────────────────────
-  // The contract computes each non-final collaborator's share as
-  //   floor(amount_stroops * bps / 10_000)
-  // and silently skips any share that rounds down to zero. Warn when at least
-  // one collaborator would receive nothing so the supporter can raise the amount.
-  const zeroPaidCount = splits.length > 1 && stroops > 0n
-    ? splits.slice(0, -1).filter(
-        (s) => (stroops * BigInt(s.bps)) / 10_000n === 0n,
-      ).length
-    : 0;
+  const canSubmit   =
+    isConnected &&
+    amountValid &&
+    !insufficientBalance &&
+    trimmedMessage.length <= MAX_MESSAGE_LENGTH &&
+    step === "input";
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   async function handleTip() {
@@ -157,7 +167,8 @@ export function TipForm({ jarId, slug, splits = [] }: TipFormProps) {
         <AmountPicker
           value={amount}
           onChange={setAmount}
-          disabled={step === "signing" || step === "confirm" || !hasRecipients}
+          disabled={step === "signing"}
+          balance={balance}
         />
 
         {/* Message input */}

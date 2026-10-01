@@ -13,6 +13,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
+import { formatUsdc, isValidTipAmount, usdcToStroops } from "@novatip/sdk";
 import { isValidTipAmount, usdcToStroops } from "@novatip/sdk";
 import { MAX_CUSTOM_TIP_USDC, isWithinTipCeiling } from "@/lib/tipAmount";
 
@@ -22,9 +23,11 @@ interface AmountPickerProps {
   value:     string;
   onChange:  (value: string) => void;
   disabled?: boolean;
+  /** The connected supporter's USDC balance, if known — null while unknown/loading. */
+  balance?:  bigint | null;
 }
 
-export function AmountPicker({ value, onChange, disabled = false }: AmountPickerProps) {
+export function AmountPicker({ value, onChange, disabled = false, balance = null }: AmountPickerProps) {
   const [isCustom, setIsCustom] = useState(false);
 
   const isPreset = PRESETS.includes(value);
@@ -74,9 +77,25 @@ export function AmountPicker({ value, onChange, disabled = false }: AmountPicker
   })();
   const exceedsCeiling = isCustom && !!value && Number(value) > MAX_CUSTOM_TIP_USDC;
 
+  const insufficientBalance = (() => {
+    if (balance === null || !amountValid) return false;
+    try {
+      return usdcToStroops(value) > balance;
+    } catch {
+      return false;
+    }
+  })();
+
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm font-medium text-fg-muted">Amount (USDC)</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-fg-muted">Amount (USDC)</p>
+        {balance !== null && (
+          <p className={cn("text-xs", insufficientBalance ? "text-danger" : "text-fg-faint")}>
+            Balance: ${formatUsdc(balance, 2)}
+          </p>
+        )}
+      </div>
 
       {/* Preset buttons */}
       <div className="grid grid-cols-5 gap-2">
@@ -148,9 +167,14 @@ export function AmountPicker({ value, onChange, disabled = false }: AmountPicker
           USDC supports up to 7 decimal places.
         </p>
       )}
+      {amountValid && insufficientBalance && (
+        <p className="text-xs text-danger">
+          That&apos;s more than your USDC balance.
+        </p>
+      )}
 
       {/* Selected amount summary */}
-      {amountValid && (
+      {amountValid && !insufficientBalance && (
         <p className="text-xs text-fg-faint text-right">
           Sending{" "}
           <span className="text-accent font-semibold">${value} USDC</span>
